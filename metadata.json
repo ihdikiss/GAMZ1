@@ -1,0 +1,5 @@
+{
+  "name": "Space Maze Chase",
+  "description": "A 2D sci-fi themed maze chase game with smooth camera follow and dynamic zoom features.",
+  "requestFramePermissions": []
+}
