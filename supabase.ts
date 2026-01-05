@@ -1,16 +1,18 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-// دالة ذكية للوصول للمتغيرات في أي بيئة (Vite أو Vercel)
+// دالة متطورة للبحث عن المفاتيح في مختلف البيئات
 const getEnv = (key: string): string => {
   try {
-    // محاولة الوصول عبر Vite
-    const v = (import.meta as any).env?.[key];
-    if (v) return v;
+    // 1. البحث في Vite (import.meta.env)
+    const viteKey = `VITE_${key}`;
+    const v = (import.meta as any).env?.[viteKey] || (import.meta as any).env?.[key];
+    if (v && v !== 'your-project-url' && v !== 'your-anon-key') return v;
     
-    // محاولة الوصول عبر process (في حال السيرفر أو Vercel build)
-    if (typeof process !== 'undefined' && process.env?.[key]) {
-      return process.env[key] as string;
+    // 2. البحث في process.env (Vercel/Node)
+    if (typeof process !== 'undefined') {
+      const p = process.env?.[viteKey] || process.env?.[key];
+      if (p) return p;
     }
   } catch (e) {
     console.warn(`Error accessing env key: ${key}`, e);
@@ -18,16 +20,17 @@ const getEnv = (key: string): string => {
   return '';
 };
 
-const URL = getEnv('VITE_SUPABASE_URL');
-const KEY = getEnv('VITE_SUPABASE_ANON_KEY');
+const URL = getEnv('SUPABASE_URL');
+const KEY = getEnv('SUPABASE_ANON_KEY');
 
-// التحقق مما إذا كانت القيم حقيقية وليست مجرد نصوص فارغة
+// التحقق من أن الرابط يبدأ بـ https وصحيح بنيوياً
 export const isConfigured = () => {
-  return URL.length > 10 && KEY.length > 10;
+  return URL.startsWith('https://') && KEY.length > 20;
 };
 
-// إنشاء العميل - إذا لم تتوفر المفاتيح، سيتم استخدام قيم وهمية لمنع الانهيار
+// إنشاء العميل
+// ملاحظة: إذا فشل الاتصال بـ Failed to fetch، فهذا يعني أن URL غير موجود أو محظور (CORS)
 export const supabase = createClient(
-  URL || 'https://your-project.supabase.co',
-  KEY || 'your-anon-key'
+  URL || 'https://placeholder-project.supabase.co',
+  KEY || 'placeholder-key'
 );
