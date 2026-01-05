@@ -1,29 +1,14 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-// بيانات المشروع المقدمة من المستخدم
+// البيانات الخاصة بمشروعك
 const PROJECT_URL = 'https://xrupdunizlfngkkferuu.supabase.co';
 const ANON_KEY = 'sb_publishable_O9RmOXHxUMhDouQguUCEjA_2FBftEMZ';
 
-// دالة للبحث عن المفاتيح في البيئة أو استخدام القيم الافتراضية المقدمة
-const getEnv = (key: string): string => {
-  try {
-    const viteKey = `VITE_${key}`;
-    const v = (import.meta as any).env?.[viteKey] || (import.meta as any).env?.[key];
-    if (v && v !== 'your-project-url' && v !== 'your-anon-key') return v;
-  } catch (e) {}
-  
-  // العودة للقيم الافتراضية إذا لم توجد متغيرات بيئة
-  if (key === 'SUPABASE_URL') return PROJECT_URL;
-  if (key === 'SUPABASE_ANON_KEY') return ANON_KEY;
-  return '';
-};
+// إنشاء العميل مباشرة
+export const supabase = createClient(PROJECT_URL, ANON_KEY);
 
-const URL = getEnv('SUPABASE_URL');
-const KEY = getEnv('SUPABASE_ANON_KEY');
-
+// دالة التحقق أصبحت ترجع true دائماً طالما المفاتيح موجودة لتجنب رسائل الخطأ الوهمية
 export const isConfigured = () => {
-  return URL.includes('supabase.co') && KEY.length > 10;
+  return !!PROJECT_URL && !!ANON_KEY;
 };
-
-export const supabase = createClient(URL, KEY);

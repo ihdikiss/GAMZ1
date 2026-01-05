@@ -32,8 +32,6 @@ const App: React.FC = () => {
   const [authError, setAuthError] = useState('');
   const [regSuccess, setRegSuccess] = useState(false);
 
-  const connected = isConfigured();
-
   useEffect(() => {
     const checkUser = async () => {
       try {
@@ -48,7 +46,7 @@ const App: React.FC = () => {
     };
     checkUser();
     loadLeaderboard();
-  }, [connected]);
+  }, []);
 
   const loadLeaderboard = async () => {
     try {
@@ -85,11 +83,17 @@ const App: React.FC = () => {
       if (error) {
         setAuthError(error.message);
       } else if (data.user) {
-        setUser(data.user);
-        setRegSuccess(true); 
+        // إذا نجح التسجيل (حتى لو كان بانتظار تفعيل البريد)
+        if (data.session) {
+          setUser(data.user);
+          setRegSuccess(true);
+        } else {
+          // في حال تطلب تفعيل البريد الإلكتروني من إعدادات Supabase
+          setAuthError('تم إنشاء الحساب! يرجى التحقق من بريدك الإلكتروني لتفعيل الحساب (أو عطل خاصية التحقق من البريد في لوحة تحكم Supabase).');
+        }
       }
     } catch (err: any) {
-      setAuthError('فشل الاتصال بخادم الهوية.');
+      setAuthError('حدث خطأ أثناء الاتصال بـ Supabase. تأكد من إعدادات الموقع.');
     } finally {
       setAuthLoading(false);
     }
@@ -109,7 +113,7 @@ const App: React.FC = () => {
         setView('landing');
       }
     } catch (err) {
-      setAuthError('فشل الدخول. يرجى التحقق من البيانات.');
+      setAuthError('بيانات الدخول غير صحيحة أو الحساب غير مفعل.');
     } finally {
       setAuthLoading(false);
     }
@@ -154,7 +158,7 @@ const App: React.FC = () => {
       {view === 'landing' && (
         <div className="flex flex-col items-center justify-center h-full text-center p-6 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-indigo-900/20 via-slate-950 to-slate-950">
           <div className="mb-8 px-5 py-2 rounded-full text-[10px] font-black border border-indigo-500/30 text-indigo-400 uppercase tracking-[0.2em]">
-            {user ? `هوية القائد: ${username} • متصل` : 'نظام التعريف الفضائي: مطلوب التسجيل'}
+            {user ? `هوية القائد: ${username} • متصل` : 'نظام التعريف الفضائي: مطلوب تسجيل الدخول'}
           </div>
           
           <h1 className="text-7xl md:text-[9.5rem] font-black mb-12 tracking-tighter leading-none italic select-none drop-shadow-[0_0_35px_rgba(99,102,241,0.3)]">
@@ -190,7 +194,7 @@ const App: React.FC = () => {
                <div className="py-10 animate-in fade-in zoom-in duration-500">
                   <div className="w-20 h-20 bg-green-500/20 text-green-500 rounded-full flex items-center justify-center text-4xl mx-auto mb-6 border border-green-500/50 shadow-[0_0_30px_rgba(34,197,94,0.2)]">✓</div>
                   <h2 className="text-3xl font-black mb-4 tracking-tighter">Identity Verified</h2>
-                  <p className="text-slate-400 mb-10 text-sm leading-relaxed">أهلاً بك أيها القائد <span className="text-white font-bold">{username}</span>. تم تسجيل بياناتك في السجلات المركزية بنجاح.</p>
+                  <p className="text-slate-400 mb-10 text-sm leading-relaxed">أهلاً بك أيها القائد <span className="text-white font-bold">{username}</span>. تم تسجيل بياناتك بنجاح في قاعدة بيانات الفضاء.</p>
                   <button onClick={() => setView('landing')} className="w-full py-5 bg-white text-black rounded-3xl font-black text-xl shadow-xl hover:scale-105 transition-all">العودة للقاعدة</button>
                </div>
              ) : (
