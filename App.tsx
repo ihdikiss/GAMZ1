@@ -66,7 +66,6 @@ const App: React.FC = () => {
       if (data && data.length > 0) {
         setDbQuestions(data);
       } else {
-        // إذا كان الجدول فارغاً، نستخدم الأسئلة الموجودة في الكود مؤقتاً
         setDbQuestions(FALLBACK_LEVELS.map(q => ({
           text: q.question,
           room1: q.rooms[0].label, room2: q.rooms[1].label, room3: q.rooms[2].label, room4: q.rooms[3].label,
@@ -76,7 +75,6 @@ const App: React.FC = () => {
     } catch (e) { console.error(e); }
   };
 
-  // ميزة مزامنة الأسئلة لرفع الأسئلة الافتراضية لقاعدة البيانات بضغطة واحدة
   const syncDefaultQuestions = async () => {
     const toInsert = FALLBACK_LEVELS.map(q => ({
       text: q.question,
@@ -160,9 +158,9 @@ const App: React.FC = () => {
       
       {/* لوحة التحكم */}
       {view === 'admin' && (
-        <div className="flex items-center justify-center h-full p-6 bg-slate-900 overflow-y-auto">
+        <div className="flex flex-col items-center justify-start h-full p-4 md:p-10 bg-slate-900 overflow-y-auto">
           {!isSecretAdmin ? (
-            <div className="bg-slate-800 p-10 rounded-[40px] w-full max-w-md shadow-2xl text-center">
+            <div className="bg-slate-800 p-10 rounded-[40px] w-full max-w-md shadow-2xl text-center my-auto">
               <h2 className="text-3xl font-black mb-6 italic">ADMIN PORTAL</h2>
               <p className="text-slate-400 mb-8 text-sm italic">أدخل كود الماستر للوصول لبنك الأسئلة</p>
               <input 
@@ -177,51 +175,64 @@ const App: React.FC = () => {
               >
                 فتح البوابة
               </button>
-              <button onClick={() => setView('landing')} className="mt-6 text-slate-500 text-xs uppercase underline">العودة للرئيسية</button>
+              <button onClick={() => setView('landing')} className="mt-6 text-slate-500 text-xs uppercase underline block mx-auto">العودة للرئيسية</button>
             </div>
           ) : (
-            <div className="bg-slate-800 p-8 md:p-12 rounded-[50px] w-full max-w-3xl shadow-2xl my-10 relative">
-              <div className="flex flex-col md:flex-row justify-between items-center mb-10 gap-4">
-                <h2 className="text-3xl font-black italic">DATABASE MANAGER</h2>
-                <div className="flex gap-2">
-                  <button onClick={syncDefaultQuestions} className="bg-amber-500/10 text-amber-500 border border-amber-500/20 px-4 py-2 rounded-xl font-bold text-xs uppercase">مزامنة الأسئلة الافتراضية ⚡</button>
-                  <button onClick={() => setView('landing')} className="bg-red-500/20 text-red-400 border border-red-500/20 px-4 py-2 rounded-xl font-bold text-xs uppercase">خروج</button>
+            <div className="bg-slate-800 p-6 md:p-12 rounded-[40px] md:rounded-[60px] w-full max-w-4xl shadow-2xl my-4 md:my-10 relative">
+              <div className="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
+                <h2 className="text-3xl font-black italic text-center md:text-right">DATABASE MANAGER</h2>
+                <div className="flex flex-wrap justify-center gap-3">
+                  <button onClick={syncDefaultQuestions} className="bg-amber-500/10 text-amber-500 border border-amber-500/20 px-5 py-3 rounded-2xl font-black text-[10px] uppercase tracking-wider hover:bg-amber-500/20 transition-all">مزامنة الأسئلة ⚡</button>
+                  <button onClick={() => setView('landing')} className="bg-red-500/20 text-red-400 border border-red-500/20 px-5 py-3 rounded-2xl font-black text-[10px] uppercase tracking-wider hover:bg-red-500/30 transition-all">خروج</button>
                 </div>
               </div>
 
-              <div className="space-y-6">
-                <div className="bg-slate-900/50 p-6 rounded-3xl border border-white/5">
-                  <label className="text-[10px] font-black text-slate-500 uppercase block mb-2">إضافة سؤال جديد</label>
-                  <input type="text" placeholder="ما هو نص السؤال؟" className="w-full p-4 bg-slate-800 rounded-2xl border border-white/5" value={newQ.text} onChange={e => setNewQ({...newQ, text: e.target.value})} />
-                  <div className="grid grid-cols-2 gap-4 mt-4">
-                    <input type="text" placeholder="الخيار 1" className="p-3 bg-slate-800 rounded-xl text-sm" value={newQ.room1} onChange={e => setNewQ({...newQ, room1: e.target.value})} />
-                    <input type="text" placeholder="الخيار 2" className="p-3 bg-slate-800 rounded-xl text-sm" value={newQ.room2} onChange={e => setNewQ({...newQ, room2: e.target.value})} />
-                    <input type="text" placeholder="الخيار 3" className="p-3 bg-slate-800 rounded-xl text-sm" value={newQ.room3} onChange={e => setNewQ({...newQ, room3: e.target.value})} />
-                    <input type="text" placeholder="الخيار 4" className="p-3 bg-slate-800 rounded-xl text-sm" value={newQ.room4} onChange={e => setNewQ({...newQ, room4: e.target.value})} />
+              <div className="grid grid-cols-1 gap-8">
+                {/* قسم الإضافة */}
+                <div className="bg-slate-900/60 p-6 md:p-8 rounded-[35px] border border-white/5 shadow-inner">
+                  <label className="text-[10px] font-black text-slate-500 uppercase block mb-4 tracking-[0.2em]">إضافة سؤال جديد إلى المجرة</label>
+                  <div className="space-y-5">
+                    <input type="text" placeholder="ما هو نص السؤال؟" className="w-full p-5 bg-slate-800 rounded-2xl border border-white/5 focus:border-indigo-500 transition-colors" value={newQ.text} onChange={e => setNewQ({...newQ, text: e.target.value})} />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <input type="text" placeholder="الخيار 1 (غرفة 1)" className="p-4 bg-slate-800 rounded-xl border border-white/5" value={newQ.room1} onChange={e => setNewQ({...newQ, room1: e.target.value})} />
+                      <input type="text" placeholder="الخيار 2 (غرفة 2)" className="p-4 bg-slate-800 rounded-xl border border-white/5" value={newQ.room2} onChange={e => setNewQ({...newQ, room2: e.target.value})} />
+                      <input type="text" placeholder="الخيار 3 (غرفة 3)" className="p-4 bg-slate-800 rounded-xl border border-white/5" value={newQ.room3} onChange={e => setNewQ({...newQ, room3: e.target.value})} />
+                      <input type="text" placeholder="الخيار 4 (غرفة 4)" className="p-4 bg-slate-800 rounded-xl border border-white/5" value={newQ.room4} onChange={e => setNewQ({...newQ, room4: e.target.value})} />
+                    </div>
+                    <div className="bg-indigo-600/5 p-5 rounded-2xl border border-indigo-500/10">
+                      <label className="text-[10px] font-black text-indigo-400 uppercase block mb-3">حدد الغرفة الصحيحة (0، 1، 2، 3)</label>
+                      <input type="number" min="0" max="3" className="w-full p-4 bg-slate-800 rounded-2xl border border-white/5" value={newQ.correct_index} onChange={e => setNewQ({...newQ, correct_index: parseInt(e.target.value)})} />
+                    </div>
+                    <button onClick={addQuestion} className="w-full py-6 bg-indigo-600 rounded-[2.5rem] font-black text-xl hover:bg-indigo-500 transition-all shadow-xl hover:scale-[1.01] active:scale-95">تأكيد الإضافة للسجلات 💾</button>
                   </div>
-                  <div className="mt-4">
-                    <label className="text-[10px] font-black text-slate-500 uppercase block mb-2">مؤشر الإجابة الصحيحة (0=الأول، 3=الأخير)</label>
-                    <input type="number" min="0" max="3" className="w-full p-3 bg-slate-800 rounded-xl" value={newQ.correct_index} onChange={e => setNewQ({...newQ, correct_index: parseInt(e.target.value)})} />
-                  </div>
-                  <button onClick={addQuestion} className="w-full mt-6 py-5 bg-green-600 rounded-2xl font-black text-xl hover:bg-green-500 transition-all shadow-lg">حفظ في قاعدة البيانات 💾</button>
                 </div>
 
-                <div className="mt-8">
-                  <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
-                    الأسئلة المسجلة <span className="text-xs bg-indigo-500 px-2 py-0.5 rounded-full">{dbQuestions.length}</span>
+                {/* قسم القائمة */}
+                <div className="bg-slate-900/40 p-6 md:p-8 rounded-[35px] border border-white/5">
+                  <h3 className="text-xl font-bold mb-6 flex items-center justify-between">
+                    الأسئلة الحالية
+                    <span className="text-[10px] bg-indigo-500/20 text-indigo-400 px-4 py-1.5 rounded-full border border-indigo-500/20 font-black">{dbQuestions.length} سؤال</span>
                   </h3>
-                  <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
-                    {dbQuestions.map((q, i) => (
-                      <div key={i} className="p-4 bg-slate-900/40 rounded-2xl border border-white/5 flex justify-between items-center group">
+                  <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                    {dbQuestions.length > 0 ? dbQuestions.map((q, i) => (
+                      <div key={i} className="p-5 bg-slate-800/40 rounded-2xl border border-white/5 flex flex-col md:flex-row justify-between items-start md:items-center gap-3 group hover:bg-slate-800 transition-colors">
                         <div className="flex gap-4 items-center">
-                          <span className="text-indigo-500 font-mono font-bold">#{i+1}</span>
-                          <span className="text-sm font-medium">{q.text}</span>
+                          <span className="w-8 h-8 flex items-center justify-center bg-indigo-500/10 text-indigo-500 rounded-full font-mono font-black text-xs">#{i+1}</span>
+                          <span className="text-sm font-bold text-slate-200">{q.text}</span>
                         </div>
-                        <span className="text-[10px] text-green-400 font-bold opacity-0 group-hover:opacity-100 transition-opacity">ACTIVE</span>
+                        <div className="flex gap-2 self-end">
+                           <span className="text-[9px] bg-green-500/10 text-green-500 px-3 py-1 rounded-full font-black uppercase">Active</span>
+                        </div>
                       </div>
-                    ))}
+                    )) : (
+                      <div className="py-20 text-center text-slate-600 italic">لا توجد أسئلة في السجلات بعد..</div>
+                    )}
                   </div>
                 </div>
+              </div>
+              
+              <div className="mt-10 pt-10 border-t border-white/5 text-center">
+                <button onClick={() => setView('landing')} className="text-slate-500 hover:text-white transition-colors text-xs font-black uppercase tracking-widest">خروج من نظام التحكم</button>
               </div>
             </div>
           )}
@@ -231,17 +242,17 @@ const App: React.FC = () => {
       {/* الواجهة الرئيسية */}
       {view === 'landing' && (
         <div className="flex flex-col items-center justify-center h-full text-center p-6 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-indigo-900/20 via-slate-950 to-slate-950">
-          <div className="mb-4 text-indigo-400 font-black text-[10px] uppercase tracking-[0.3em]">Deep Space Adventure</div>
-          <h1 className="text-8xl md:text-[10rem] font-black mb-12 italic tracking-tighter leading-none select-none">SPACE<br/><span className="text-transparent bg-clip-text bg-gradient-to-b from-indigo-400 to-indigo-800">MAZE</span></h1>
+          <div className="mb-4 text-indigo-400 font-black text-[10px] uppercase tracking-[0.3em] animate-pulse">Deep Space Adventure</div>
+          <h1 className="text-8xl md:text-[10rem] font-black mb-12 italic tracking-tighter leading-none select-none drop-shadow-[0_0_50px_rgba(79,70,229,0.3)]">SPACE<br/><span className="text-transparent bg-clip-text bg-gradient-to-b from-indigo-400 to-indigo-800">MAZE</span></h1>
           <div className="flex flex-col gap-4 w-full max-w-md">
             <button onClick={() => { setIsVipFlow(false); setView(user ? 'game' : 'register'); }} className="py-6 bg-white text-black rounded-[2.5rem] font-black text-2xl hover:scale-105 transition-all shadow-2xl active:scale-95">مهمة عادية 🚀</button>
             <button onClick={() => { setIsVipFlow(true); if(user) window.open(WHATSAPP_LINK, '_blank'); else setView('register'); }} className="py-5 bg-gradient-to-br from-purple-600 to-indigo-700 text-white rounded-[2.5rem] font-black text-xl hover:scale-105 transition-all shadow-xl border border-purple-400/30">مغامرة VIP ✨</button>
             <div className="grid grid-cols-2 gap-4">
-              <button onClick={() => setView('leaderboard')} className="py-4 bg-slate-900 border border-white/10 rounded-3xl font-black text-[10px] uppercase tracking-widest">لوحة الشرف</button>
+              <button onClick={() => setView('leaderboard')} className="py-4 bg-slate-900 border border-white/10 rounded-3xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-800">لوحة الشرف</button>
               {user ? (
                 <button onClick={() => { supabase.auth.signOut(); setUser(null); }} className="py-4 bg-red-900/10 text-red-400 border border-red-500/20 rounded-3xl font-black text-[10px] uppercase">خروج</button>
               ) : (
-                <button onClick={() => setView('login')} className="py-4 bg-indigo-600/10 text-indigo-400 border border-indigo-500/20 rounded-3xl font-black text-[10px] uppercase">دخول</button>
+                <button onClick={() => setView('login')} className="py-4 bg-indigo-600/10 text-indigo-400 border border-indigo-500/20 rounded-3xl font-black text-[10px] uppercase hover:bg-indigo-500/20 transition-all">دخول</button>
               )}
             </div>
           </div>
@@ -310,7 +321,7 @@ const App: React.FC = () => {
           <div className="w-full max-w-xl bg-slate-900/95 backdrop-blur-3xl p-12 rounded-[70px] border border-indigo-500/20 shadow-2xl text-center relative">
             <button onClick={() => setView('landing')} className="absolute top-10 right-10 text-slate-500 font-bold hover:text-white">✕</button>
             <h2 className="text-4xl font-black italic mb-12 text-indigo-400">LEADERBOARD 🛰️</h2>
-            <div className="space-y-3 mb-10 max-h-80 overflow-y-auto pr-2">
+            <div className="space-y-3 mb-10 max-h-80 overflow-y-auto pr-2 custom-scrollbar">
               {leaderboard.length > 0 ? leaderboard.map((e, i) => (
                 <div key={i} className="flex justify-between items-center p-6 bg-slate-800/30 border border-white/5 rounded-[2.5rem]">
                    <span className="text-3xl font-black font-mono text-indigo-400">{e.score}</span>
