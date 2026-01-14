@@ -23,7 +23,7 @@ export default class MazeScene extends Phaser.Scene {
   private currentZoom: number = 0.8;
   private zoomSpeed: number = 0.05;
   private invulnerable: boolean = false;
-  private isSafe: boolean = false; // Flag to protect player during level transitions
+  private isSafe: boolean = false;
   private enemySpeedMultiplier: number = 1.0;
   private currentLevelIndex: number = 0;
 
@@ -60,6 +60,27 @@ export default class MazeScene extends Phaser.Scene {
     const worldW = MAZE_DATA[0].length * TILE_SIZE;
     const worldH = MAZE_DATA.length * TILE_SIZE;
     this.physics.world.setBounds(0, 0, worldW, worldH);
+
+    this.showMissionText();
+  }
+
+  private showMissionText() {
+    const text = this.add.text(this.cameras.main.centerX, this.cameras.main.centerY, `بدء المهمة ${this.currentLevelIndex + 1}`, {
+      fontSize: '64px',
+      color: '#ffffff',
+      fontStyle: 'bold italic',
+      stroke: '#4f46e5',
+      strokeThickness: 10
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(200);
+
+    this.tweens.add({
+      targets: text,
+      alpha: 0,
+      scale: 1.5,
+      duration: 1500,
+      ease: 'Power2',
+      onComplete: () => text.destroy()
+    });
   }
 
   private createPlayer() {
@@ -133,19 +154,9 @@ export default class MazeScene extends Phaser.Scene {
       yoyo: true,
       repeat: -1
     });
-
-    this.tweens.add({
-      targets: [legL, legR],
-      y: '+=6',
-      duration: 180,
-      yoyo: true,
-      repeat: -1,
-      ease: 'Sine.easeInOut'
-    });
   }
 
   private handleEnemyCollision() {
-    // If player is in "Safe Mode" (correct answer reached) or hit-invulnerable, ignore collision
     if (this.invulnerable || this.isSafe) return;
 
     this.invulnerable = true;
@@ -162,8 +173,10 @@ export default class MazeScene extends Phaser.Scene {
       yoyo: true,
       repeat: 8,
       onComplete: () => {
-        this.player.alpha = 1;
-        this.invulnerable = false;
+        if (this.player) {
+          this.player.alpha = 1;
+          this.invulnerable = false;
+        }
       }
     });
   }
@@ -199,7 +212,6 @@ export default class MazeScene extends Phaser.Scene {
   }
 
   private createRooms() {
-    // Clear old room objects
     this.roomObjects.forEach(obj => obj.destroy());
     this.roomObjects = [];
     this.roomAreas = [];
@@ -242,7 +254,6 @@ export default class MazeScene extends Phaser.Scene {
     const icon = isCorrect ? "✔️" : "❌";
 
     const feedbackGroup = this.add.container(x, y);
-    
     const label = this.add.text(0, -40, text, {
       fontSize: '52px',
       color: color,
@@ -251,10 +262,7 @@ export default class MazeScene extends Phaser.Scene {
       strokeThickness: 8
     }).setOrigin(0.5);
 
-    const sym = this.add.text(0, 30, icon, {
-      fontSize: '100px'
-    }).setOrigin(0.5);
-
+    const sym = this.add.text(0, 30, icon, { fontSize: '100px' }).setOrigin(0.5);
     feedbackGroup.add([label, sym]);
     feedbackGroup.setDepth(100);
 
@@ -268,7 +276,7 @@ export default class MazeScene extends Phaser.Scene {
     });
 
     if (isCorrect) {
-      this.isSafe = true; // Make player safe immediately on correct answer
+      this.isSafe = true;
       this.nextLevel();
     } else {
       this.cameras.main.shake(300, 0.015);
@@ -290,19 +298,19 @@ export default class MazeScene extends Phaser.Scene {
       this.time.delayedCall(1200, () => {
         this.player.setPosition(TILE_SIZE * 1.5, TILE_SIZE * 1.5);
         this.createRooms();
-        this.isSafe = false; // Player is no longer safe once they start the new level
+        this.isSafe = false;
+        this.showMissionText();
       });
     }
   }
 
   update(time: number, delta: number) {
-    const speed = 320;
+    const speed = 350; // زيادة السرعة قليلاً
     const body = this.player.body as Phaser.Physics.Arcade.Body;
     
     let vx = 0;
     let vy = 0;
 
-    // Only allow movement if not in transition (optional, but keep for fluidity)
     if (this.cursors.left.isDown) vx = -speed;
     else if (this.cursors.right.isDown) vx = speed;
 
@@ -320,7 +328,6 @@ export default class MazeScene extends Phaser.Scene {
       if (!room.processed && Phaser.Geom.Rectangle.Contains(room.rect, this.player.x, this.player.y)) {
         room.processed = true;
         this.showFeedback(room.rect.centerX, room.rect.centerY, room.config.isCorrect);
-        
         if (!room.config.isCorrect) {
           body.setVelocity(body.velocity.x * -4, body.velocity.y * -4);
         } else {
@@ -332,20 +339,20 @@ export default class MazeScene extends Phaser.Scene {
     }
 
     let inRoom = this.roomAreas.some(r => Phaser.Geom.Rectangle.Contains(r.rect, this.player.x, this.player.y));
-    this.targetZoom = inRoom ? 1.0 : 0.7;
+    this.targetZoom = inRoom ? 1.0 : 0.75;
     this.currentZoom = Phaser.Math.Linear(this.currentZoom, this.targetZoom, this.zoomSpeed);
     this.cameras.main.setZoom(this.currentZoom);
 
     this.enemies.getChildren().forEach((enemy: any) => {
       const dist = Phaser.Math.Distance.Between(enemy.x, enemy.y, this.player.x, this.player.y);
       if (dist < 450) {
-        this.physics.moveToObject(enemy, this.player, 140 * this.enemySpeedMultiplier);
+        this.physics.moveToObject(enemy, this.player, 145 * this.enemySpeedMultiplier);
       } else {
-        if (Math.random() < 0.02) {
+        if (Math.random() < 0.01) {
           const angle = Phaser.Math.Between(0, 360);
           enemy.body.setVelocity(
-            Math.cos(angle) * 100 * this.enemySpeedMultiplier,
-            Math.sin(angle) * 100 * this.enemySpeedMultiplier
+            Math.cos(angle) * 110 * this.enemySpeedMultiplier,
+            Math.sin(angle) * 110 * this.enemySpeedMultiplier
           );
         }
       }
