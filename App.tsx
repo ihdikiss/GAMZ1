@@ -109,13 +109,11 @@ const App: React.FC = () => {
         result = await supabase.auth.signUp({ email, password, options: { data: { username } } });
         if (result.data.user) {
           console.log("Creating profile for new user...");
-          // إنشاء بروفايل في جدول profiles لضمان تتبع المستخدم
           await supabase.from('profiles').insert([{ 
             id: result.data.user.id,
             email: email,
             username: username
           }]);
-          // إضافة لليدربورد
           await supabase.from('leaderboard').insert([{ name: username, score: 0, time: 0 }]);
         }
       } else {
@@ -136,7 +134,6 @@ const App: React.FC = () => {
 
   const handleSelectUser = (u: any) => {
     setSelectedUser(u);
-    // إذا كان للمستخدم بيانات VIP سابقة، قم بتحميلها في النموذج
     if (u.vip_data && Array.isArray(u.vip_data)) {
       setVipQuestions(u.vip_data);
     } else {
@@ -156,7 +153,7 @@ const App: React.FC = () => {
       
       if (error) throw error;
       alert(`✅ تم تفعيل نظام VIP بنجاح للمستخدم: ${selectedUser.email}`);
-      fetchAdminUsers(); // تحديث القائمة لضمان البيانات الجديدة
+      fetchAdminUsers();
     } catch (err: any) {
       console.error("Update error:", err);
       alert('❌ خطأ في الحفظ: ' + err.message);
@@ -223,7 +220,7 @@ const App: React.FC = () => {
             </div>
           ) : (
             <>
-              {/* شريط جانبي للمستخدمين - Sidebar */}
+              {/* Sidebar */}
               <div className="w-full md:w-[320px] bg-slate-950 border-l border-white/10 flex flex-col overflow-hidden shadow-2xl z-[70] h-full">
                 <div className="p-8 border-b border-white/5 bg-slate-900/50">
                   <div className="flex justify-between items-center">
@@ -265,11 +262,10 @@ const App: React.FC = () => {
                 </div>
               </div>
 
-              {/* منطقة العمل الرئيسية - Form */}
+              {/* Main Workspace */}
               <div className="flex-1 overflow-y-auto custom-scrollbar bg-slate-900 relative">
                 {selectedUser ? (
                   <div className="p-6 md:p-12 max-w-4xl mx-auto">
-                    {/* Header لنموذج التخصيص */}
                     <div className="sticky top-0 z-10 bg-slate-900/90 backdrop-blur-md pb-8 mb-8 border-b border-white/5 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
                       <div className="flex items-center gap-6">
                          <div className="w-16 h-16 bg-indigo-600 rounded-[2rem] flex items-center justify-center text-3xl shadow-xl">⚙️</div>
@@ -287,7 +283,6 @@ const App: React.FC = () => {
                       </button>
                     </div>
 
-                    {/* قائمة الأسئلة الـ 10 */}
                     <div className="space-y-8 pb-32">
                       {vipQuestions.map((q, idx) => (
                         <div key={idx} className="bg-slate-800/40 p-8 md:p-10 rounded-[45px] border border-white/5 shadow-xl group hover:border-indigo-500/20 transition-all">
@@ -321,24 +316,28 @@ const App: React.FC = () => {
                               ))}
                             </div>
 
+                            {/* التعديل المطلوب: خانة اختيار الإجابة الصحيحة */}
                             <div className="flex items-center justify-between gap-6 p-6 bg-indigo-600/5 rounded-3xl border border-indigo-500/10 mt-4">
                               <div>
-                                <span className="text-[10px] font-black text-indigo-400 uppercase block">الإجابة الصحيحة</span>
-                                <p className="text-[11px] text-slate-500 font-medium">اختر رقم الغرفة (0=الغرفة 1، 1=الغرفة 2...)</p>
+                                <span className="text-[10px] font-black text-indigo-400 uppercase block">تحديد الإجابة الصحيحة</span>
+                                <p className="text-[11px] text-slate-500 font-medium">اختر الغرفة التي تحتوي على الجواب الصحيح</p>
                               </div>
-                              <input 
-                                type="number" min="0" max="3" 
-                                className="w-20 p-4 bg-slate-950 rounded-2xl text-center font-black text-xl border border-indigo-500/30 text-indigo-400 focus:shadow-[0_0_15px_rgba(79,70,229,0.2)]"
+                              <select 
+                                className="bg-slate-950 p-4 rounded-2xl font-black text-sm border border-indigo-500/30 text-indigo-400 outline-none focus:ring-2 focus:ring-indigo-500/50 appearance-none min-w-[140px] text-center"
                                 value={q.correct_index}
                                 onChange={(e) => handleVipQuestionChange(idx, 'correct_index', parseInt(e.target.value))}
-                              />
+                              >
+                                <option value={0}>الغرفة 1</option>
+                                <option value={1}>الغرفة 2</option>
+                                <option value={2}>الغرفة 3</option>
+                                <option value={3}>الغرفة 4</option>
+                              </select>
                             </div>
                           </div>
                         </div>
                       ))}
                     </div>
 
-                    {/* زر الحفظ النهائي في الأسفل */}
                     <div className="fixed bottom-10 left-[340px] right-10 flex justify-center z-20 pointer-events-none">
                        <button 
                         onClick={handleSaveVip} 
@@ -364,7 +363,7 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* الواجهة الرئيسية */}
+      {/* Landing View */}
       {view === 'landing' && (
         <div className="flex flex-col items-center justify-center h-full text-center p-6 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-indigo-900/20 via-slate-950 to-slate-950">
           <div className="mb-4 text-indigo-400 font-black text-[10px] uppercase tracking-[0.3em] animate-pulse">Deep Space Adventure</div>
@@ -384,7 +383,7 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* اللعبة */}
+      {/* Game View */}
       {view === 'game' && currentQuestion && (
         <div className="w-full h-full relative">
           <div className="absolute top-8 left-1/2 -translate-x-1/2 z-40 w-full max-w-2xl px-6">
@@ -415,7 +414,7 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* شاشات التسجيل */}
+      {/* Auth Screens */}
       {(view === 'login' || view === 'register') && (
         <div className="flex items-center justify-center h-full p-6">
            <div className="bg-slate-900/90 backdrop-blur-3xl p-12 rounded-[50px] w-full max-w-md border border-white/5 text-center relative">
@@ -440,7 +439,7 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* لوحة الشرف */}
+      {/* Leaderboard */}
       {view === 'leaderboard' && (
         <div className="flex flex-col items-center justify-center h-full p-6">
           <div className="w-full max-w-xl bg-slate-900/95 backdrop-blur-3xl p-12 rounded-[70px] border border-indigo-500/20 shadow-2xl text-center relative">
