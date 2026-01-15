@@ -1,18 +1,28 @@
 
 import { createClient } from '@supabase/supabase-js';
 
+/**
+ * بيانات مشروع Supabase الخاص بك
+ * تم تحديثها بناءً على المعلومات المقدمة:
+ * Project ID: xrupdunizlfngkkferuu
+ * URL: https://xrupdunizlfngkkferuu.supabase.co
+ */
+const PROJECT_URL = "https://xrupdunizlfngkkferuu.supabase.co";
+const ANON_KEY = "sb_publishable_O9RmOXHxUMhDouQguUCEjA_2FBftEMZ"; 
+
 const getEnv = (key: string): string => {
   try {
     const env = (import.meta as any).env;
-    // تنظيف المفاتيح من أي مسافات زائدة قد تسبب خطأ في الاتصال
-    return env && env[key] ? String(env[key]).trim() : '';
+    if (env && env[key]) return String(env[key]).trim();
+    return '';
   } catch {
     return '';
   }
 };
 
-const supabaseUrl = getEnv('VITE_SUPABASE_URL');
-const supabaseAnonKey = getEnv('VITE_SUPABASE_ANON_KEY');
+// الأولوية للبيانات اليدوية التي أدخلتها أنت، ثم لمتغيرات البيئة
+const supabaseUrl = PROJECT_URL || getEnv('VITE_SUPABASE_URL');
+const supabaseAnonKey = ANON_KEY || getEnv('VITE_SUPABASE_ANON_KEY');
 
 const isValidUrl = (url: string) => {
   try {
@@ -23,10 +33,15 @@ const isValidUrl = (url: string) => {
   }
 };
 
-// إنشاء الكليانت مع التعامل مع القيم الفارغة لمنع انهيار الموقع
+// إنشاء الكليانت للاتصال بـ Supabase
 export const supabase = createClient(
   isValidUrl(supabaseUrl) ? supabaseUrl : 'https://placeholder.supabase.co',
-  supabaseAnonKey || 'placeholder'
+  supabaseAnonKey || 'placeholder-key'
 );
 
-export const isConfigured = () => isValidUrl(supabaseUrl) && !!supabaseAnonKey;
+/**
+ * دالة للتحقق من أن الإعدادات مكتملة
+ */
+export const isConfigured = () => {
+  return isValidUrl(supabaseUrl) && !!supabaseAnonKey && supabaseAnonKey !== 'placeholder-key';
+};

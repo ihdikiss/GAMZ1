@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../supabase';
+import { supabase, isConfigured } from '../supabase';
 
 interface UserProfile {
   id: string;
@@ -28,7 +28,7 @@ const AdminPanel: React.FC<{ onExit: () => void }> = ({ onExit }) => {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{message: string, type: 'network' | 'db' | 'config'} | null>(null);
   const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
 
   // دالة التحقق من الكود
@@ -42,18 +42,29 @@ const AdminPanel: React.FC<{ onExit: () => void }> = ({ onExit }) => {
     }
   };
 
-  // دالة جلب البيانات - لا تستدعى إلا بعد التحقق
+  // دالة جلب البيانات
   const fetchAdminData = async () => {
+    if (!isConfigured()) {
+      setError({
+        type: 'config',
+        message: 'مفاتيح Supabase غير مضبوطة بشكل صحيح في إعدادات البيئة (Environment Variables).'
+      });
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
       // 1. جلب المستخدمين من جدول profiles
+      // ملاحظة: إذا لم يكن الجدول موجوداً، سيعود خطأ "Database error"
       const { data: usersData, error: uErr } = await supabase
         .from('profiles')
         .select('*')
         .order('created_at', { ascending: false });
       
-      if (uErr) throw uErr;
+      if (uErr) {
+        throw { type: 'db', message: uErr.message };
+      }
       setUsers(usersData || []);
 
       // 2. جلب الأسئلة
@@ -62,12 +73,24 @@ const AdminPanel: React.FC<{ onExit: () => void }> = ({ onExit }) => {
         .select('*')
         .order('created_at', { ascending: true });
       
-      if (qErr) throw qErr;
+      if (qErr) {
+        throw { type: 'db', message: qErr.message };
+      }
       setQuestions(qData || []);
 
     } catch (err: any) {
-      console.error("Fetch Error:", err);
-      setError("❌ فشل الاتصال بقاعدة البيانات. تأكد من إعدادات Supabase (VITE_SUPABASE_URL) ومن اتصالك بالإنترنت.");
+      console.error("Admin Fetch Error:", err);
+      if (err.message === 'Failed to fetch') {
+        setError({
+          type: 'network',
+          message: 'فشل الاتصال بالسيرفر (Failed to fetch). تأكد من صحة رابط VITE_SUPABASE_URL ومن اتصالك بالإنترنت.'
+        });
+      } else {
+        setError({
+          type: err.type || 'db',
+          message: err.message || 'حدث خطأ غير متوقع أثناء جلب البيانات.'
+        });
+      }
     } finally {
       setLoading(false);
     }
@@ -112,12 +135,19 @@ const AdminPanel: React.FC<{ onExit: () => void }> = ({ onExit }) => {
               value={adminCodeInput}
               onChange={(e) => setAdminCodeInput(e.target.value)}
               autoFocus
+              autoComplete="off"
             />
             <button type="submit" className="w-full py-5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-black text-lg transition-all transform active:scale-95">
               فتح اللوحة 🔓
             </button>
             <button type="button" onClick={onExit} className="text-slate-600 hover:text-white transition-colors text-sm underline mt-4">إلغاء والعودة</button>
           </form>
+          
+          {!isConfigured() && (
+            <div className="mt-6 p-4 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-xl text-xs">
+              ⚠️ تحذير: لم يتم الكشف عن مفاتيح Supabase. لن تتمكن من جلب البيانات حتى تقوم بضبطها.
+            </div>
+          )}
         </div>
       </div>
     );
@@ -134,7 +164,15 @@ const AdminPanel: React.FC<{ onExit: () => void }> = ({ onExit }) => {
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 custom-scrollbar space-y-3">
-          {users.length === 0 && !loading && <p className="text-center text-slate-600 italic py-10">لا يوجد مستخدمين بعد...</p>}
+          {loading && users.length === 0 && <p className="text-center py-10 opacity-30 animate-pulse">جاري جلب القائمة...</p>}
+          {users.length === 0 && !loading && !error && <p className="text-center text-slate-600 italic py-10">لا يوجد مستخدمين بعد...</p>}
+          
+          {error?.type === 'db' && (
+            <div className="p-4 bg-red-900/20 text-red-400 rounded-xl text-xs border border-red-500/10">
+              خطأ في القاعدة: تأكد من وجود جدول باسم 'profiles'.
+            </div>
+          )}
+
           {users.map((u) => (
             <div key={u.id} className="p-4 bg-slate-800/40 rounded-2xl border border-white/5 hover:border-indigo-500/30 transition-all group">
               <div className="flex items-center gap-3">
@@ -165,19 +203,30 @@ const AdminPanel: React.FC<{ onExit: () => void }> = ({ onExit }) => {
               <h2 className="text-4xl font-black text-white italic">تعديل المحتوى 🛠️</h2>
               <p className="text-slate-500 mt-2">قم بتعديل الأسئلة الـ 10 الخاصة بالمتاهة الفضائية</p>
             </div>
-            <button onClick={fetchAdminData} className="p-4 bg-indigo-600/10 text-indigo-400 rounded-2xl hover:bg-indigo-600 hover:text-white transition-all border border-indigo-500/20">
-              🔄 تحديث
+            <button 
+              onClick={fetchAdminData} 
+              disabled={loading}
+              className="p-4 bg-indigo-600/10 text-indigo-400 rounded-2xl hover:bg-indigo-600 hover:text-white transition-all border border-indigo-500/20 disabled:opacity-50"
+            >
+              🔄 {loading ? 'جاري التحديث...' : 'تحديث'}
             </button>
           </header>
 
           {error && (
-            <div className="mb-8 p-6 bg-red-900/20 border-2 border-red-500/20 text-red-400 rounded-3xl flex items-center gap-4">
-              <span className="text-3xl">⚠️</span>
-              <p className="font-bold leading-relaxed">{error}</p>
+            <div className="mb-8 p-8 bg-red-900/20 border-2 border-red-500/20 text-red-400 rounded-[2.5rem] flex items-start gap-6 shadow-xl">
+              <span className="text-5xl">🛑</span>
+              <div>
+                <h3 className="text-xl font-black mb-2">فشل في الاتصال</h3>
+                <p className="font-bold leading-relaxed opacity-80">{error.message}</p>
+                <div className="mt-4 flex gap-3">
+                  <button onClick={fetchAdminData} className="px-5 py-2 bg-red-500 text-white rounded-xl text-xs font-black">إعادة المحاولة</button>
+                  <a href="https://supabase.com/dashboard" target="_blank" className="px-5 py-2 bg-white/5 text-white rounded-xl text-xs font-black border border-white/10">لوحة تحكم Supabase</a>
+                </div>
+              </div>
             </div>
           )}
 
-          {loading && !editingQuestion && (
+          {loading && !editingQuestion && questions.length === 0 && (
             <div className="flex flex-col items-center justify-center py-20 opacity-50">
               <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
               <p className="font-bold tracking-widest text-indigo-400">جاري الاتصال بالمجرة...</p>
@@ -186,7 +235,7 @@ const AdminPanel: React.FC<{ onExit: () => void }> = ({ onExit }) => {
 
           <div className="grid grid-cols-1 gap-6">
             {questions.map((q, idx) => (
-              <div key={q.id || idx} className="bg-slate-900/50 border border-white/5 p-8 rounded-[2.5rem] hover:border-indigo-500/20 transition-all flex items-start gap-6 group">
+              <div key={q.id || idx} className="bg-slate-900/50 border border-white/5 p-8 rounded-[2.5rem] hover:border-indigo-500/20 transition-all flex items-start gap-6 group shadow-lg">
                 <div className="w-14 h-14 bg-slate-800 rounded-2xl flex items-center justify-center font-black text-xl text-slate-500 group-hover:text-indigo-400 transition-colors">
                   {idx + 1}
                 </div>
@@ -214,7 +263,7 @@ const AdminPanel: React.FC<{ onExit: () => void }> = ({ onExit }) => {
         {/* Modal المحرر */}
         {editingQuestion && (
           <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-xl z-[11000] flex items-center justify-center p-6 overflow-y-auto">
-            <form onSubmit={handleUpdateQuestion} className="bg-slate-900 w-full max-w-2xl p-10 rounded-[3rem] border-2 border-indigo-500/30 shadow-2xl relative">
+            <form onSubmit={handleUpdateQuestion} className="bg-slate-900 w-full max-w-2xl p-10 rounded-[3rem] border-2 border-indigo-500/30 shadow-2xl relative my-auto">
               <button 
                 type="button" 
                 onClick={() => setEditingQuestion(null)}
