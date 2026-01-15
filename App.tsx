@@ -6,6 +6,7 @@ import { supabase } from './supabase';
 
 interface LeaderboardEntry { name: string; score: number; time: number; }
 interface QuestionData {
+  id?: string;
   text: string;
   room1: string; room2: string; room3: string; room4: string; 
   correct_index: number;
@@ -31,10 +32,8 @@ const App: React.FC = () => {
   // Admin States
   const [adminUsers, setAdminUsers] = useState<any[]>([]);
   const [selectedUser, setSelectedUser] = useState<any>(null);
-  const [vipQuestions, setVipQuestions] = useState<QuestionData[]>(
-    Array(10).fill({ text: '', room1: '', room2: '', room3: '', room4: '', correct_index: 0 })
-  );
-  const [isSavingVip, setIsSavingVip] = useState(false);
+  const [adminQuestions, setAdminQuestions] = useState<QuestionData[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
   const [isFetchingUsers, setIsFetchingUsers] = useState(false);
   
   // Auth states
@@ -59,65 +58,35 @@ const App: React.FC = () => {
     };
     checkUser();
     loadLeaderboard();
+    fetchQuestions();
   }, []);
 
-  // جلب الأسئلة عند بدء اللعبة
-  useEffect(() => {
-    if (view === 'game') {
-      fetchGameQuestions();
-    }
-  }, [view, user]);
-
-  const fetchGameQuestions = async () => {
+  const fetchQuestions = async () => {
     try {
-      // محاولة جلب بيانات الـ VIP للمستخدم الحالي أولاً
-      if (user) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('vip_data')
-          .eq('id', user.id)
-          .single();
-        
-        if (profile?.vip_data && Array.isArray(profile.vip_data) && profile.vip_data.length > 0) {
-          console.log("Loading VIP mission questions...");
-          setDbQuestions(profile.vip_data);
-          return;
-        }
-      }
-
-      // إذا لم يكن VIP، جلب الأسئلة العامة
       const { data } = await supabase.from('questions').select('*').order('created_at', { ascending: true });
       if (data && data.length > 0) {
         setDbQuestions(data);
+        setAdminQuestions(data);
       } else {
-        setDbQuestions(FALLBACK_LEVELS.map(q => ({
+        const fallbacks = FALLBACK_LEVELS.map(q => ({
           text: q.question,
           room1: q.rooms[0].label, room2: q.rooms[1].label, room3: q.rooms[2].label, room4: q.rooms[3].label,
           correct_index: q.rooms.findIndex(r => r.isCorrect)
-        })));
+        }));
+        setDbQuestions(fallbacks);
+        setAdminQuestions(fallbacks);
       }
-    } catch (e) {
-      console.error("Error setting game questions:", e);
-    }
+    } catch (e) { console.error(e); }
   };
 
   const fetchAdminUsers = async () => {
     setIsFetchingUsers(true);
-    console.log("Fetching basic user info...");
     try {
-      // جلب المعلومات الأساسية فقط لتجنب خطأ العمود المفقود
+      // نجلب الحقول الأساسية فقط التي نضمن وجودها
       const { data, error } = await supabase.from('profiles').select('id, email, username');
-      if (error) {
-        console.error("Fetch users error:", error);
-        alert("خطأ: " + error.message);
-      } else {
-        setAdminUsers(data || []);
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsFetchingUsers(false);
-    }
+      if (!error) setAdminUsers(data || []);
+    } catch (err) { console.error(err); }
+    finally { setIsFetchingUsers(false); }
   };
 
   useEffect(() => {
@@ -133,11 +102,7 @@ const App: React.FC = () => {
       if (mode === 'reg') {
         result = await supabase.auth.signUp({ email, password, options: { data: { username } } });
         if (result.data.user) {
-          await supabase.from('profiles').insert([{ 
-            id: result.data.user.id,
-            email: email,
-            username: username
-          }]);
+          await supabase.from('profiles').insert([{ id: result.data.user.id, email, username }]);
           await supabase.from('leaderboard').insert([{ name: username, score: 0, time: 0 }]);
         }
       } else {
@@ -150,45 +115,29 @@ const App: React.FC = () => {
     } catch (err: any) { setAuthError(err.message); } finally { setAuthLoading(false); }
   };
 
-  const handleVipQuestionChange = (index: number, field: keyof QuestionData, value: any) => {
-    const updated = [...vipQuestions];
+  const handleAdminQuestionChange = (index: number, field: keyof QuestionData, value: any) => {
+    const updated = [...adminQuestions];
     updated[index] = { ...updated[index], [field]: value };
-    setVipQuestions(updated);
+    setAdminQuestions(updated);
   };
 
-  const handleSelectUser = async (u: any) => {
-    setSelectedUser(u);
-    // محاولة جلب بيانات الـ VIP لهذا المستخدم خصيصاً
-    const { data, error } = await supabase.from('profiles').select('vip_data').eq('id', u.id).single();
-    if (!error && data?.vip_data) {
-      setVipQuestions(data.vip_data);
-    } else {
-      setVipQuestions(Array(10).fill({ text: '', room1: '', room2: '', room3: '', room4: '', correct_index: 0 }));
-    }
-  };
-
-  const handleSaveVip = async () => {
-    if (!selectedUser) return;
-    setIsSavingVip(true);
+  const handleSaveAllQuestions = async () => {
+    setIsSaving(true);
     try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({ vip_data: vipQuestions })
-        .eq('id', selectedUser.id);
-      
-      if (error) {
-        if (error.message.includes("column \"vip_data\" does not exist")) {
-          alert("❌ خطأ: عمود vip_data غير موجود في جدول profiles. يرجى إضافته من واجهة Supabase (نوع jsonb).");
-        } else {
-          throw error;
+      // تحديث الأسئلة في جدول questions العام
+      for (const q of adminQuestions) {
+        if (q.id) {
+          await supabase.from('questions').update({
+            text: q.text, room1: q.room1, room2: q.room2, room3: q.room3, room4: q.room4, correct_index: q.correct_index
+          }).eq('id', q.id);
         }
-      } else {
-        alert(`✅ تم تفعيل نظام VIP بنجاح للمستخدم: ${selectedUser.email}`);
       }
+      alert('✅ تم تحديث جميع الأسئلة بنجاح!');
+      fetchQuestions();
     } catch (err: any) {
       alert('❌ خطأ في الحفظ: ' + err.message);
     } finally {
-      setIsSavingVip(false);
+      setIsSaving(false);
     }
   };
 
@@ -250,25 +199,21 @@ const App: React.FC = () => {
             </div>
           ) : (
             <>
-              {/* Sidebar: Users List */}
+              {/* Sidebar: Users (View only) */}
               <div className="w-full md:w-[320px] bg-slate-950 border-l border-white/10 flex flex-col overflow-hidden h-full">
                 <div className="p-8 border-b border-white/5 bg-slate-900/50">
                   <h3 className="text-xl font-black italic text-indigo-400">USERS LIST</h3>
-                  <p className="text-[10px] text-slate-500 font-bold uppercase mt-1">اختر مستخدماً لتخصيصه</p>
+                  <p className="text-[10px] text-slate-500 font-bold uppercase mt-1">إجمالي المستخدمين المسجلين</p>
                 </div>
                 <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-3">
                   {isFetchingUsers ? (
                     <div className="text-center py-10 opacity-50">جاري التحميل...</div>
                   ) : adminUsers.length > 0 ? (
                     adminUsers.map(u => (
-                      <button 
-                        key={u.id}
-                        onClick={() => handleSelectUser(u)}
-                        className={`w-full p-5 rounded-[2rem] text-right transition-all border ${selectedUser?.id === u.id ? 'bg-indigo-600 border-indigo-400' : 'bg-slate-900/80 border-white/5 hover:border-indigo-500/30'}`}
-                      >
+                      <div key={u.id} className="w-full p-5 rounded-[2rem] text-right border bg-slate-900/80 border-white/5">
                         <span className="font-black text-sm block truncate">{u.email}</span>
-                        <span className="text-[9px] opacity-40 font-mono">{u.id.slice(0,12)}...</span>
-                      </button>
+                        <span className="text-[9px] opacity-40 font-mono uppercase">{u.username || 'N/A'}</span>
+                      </div>
                     ))
                   ) : (
                     <div className="py-10 text-center text-slate-600 italic">لا يوجد مستخدمين حالياً</div>
@@ -279,73 +224,66 @@ const App: React.FC = () => {
                 </div>
               </div>
 
-              {/* Main Area: VIP Customizer */}
+              {/* Main Area: Global Question Editor */}
               <div className="flex-1 overflow-y-auto custom-scrollbar bg-slate-900">
-                {selectedUser ? (
-                  <div className="p-6 md:p-12 max-w-4xl mx-auto space-y-10">
-                    <div className="flex flex-col md:flex-row justify-between items-center gap-6 bg-slate-800/50 p-8 rounded-[40px] border border-white/5">
-                      <div className="text-center md:text-right">
-                        <h2 className="text-3xl font-black italic">VIP MISSION BUILDER</h2>
-                        <p className="text-slate-400 text-sm mt-1">تعديل أسئلة: <span className="text-indigo-400 font-black">{selectedUser.email}</span></p>
-                      </div>
-                      <button 
-                        onClick={handleSaveVip}
-                        disabled={isSavingVip}
-                        className="px-12 py-5 bg-green-600 text-white rounded-[2rem] font-black text-xl shadow-2xl hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
-                      >
-                        {isSavingVip ? 'جاري الحفظ...' : 'حفظ وتفعيل VIP ✅'}
-                      </button>
+                <div className="p-6 md:p-12 max-w-4xl mx-auto space-y-10">
+                  <div className="flex flex-col md:flex-row justify-between items-center gap-6 bg-slate-800/50 p-8 rounded-[40px] border border-white/5">
+                    <div className="text-center md:text-right">
+                      <h2 className="text-3xl font-black italic">GLOBAL MISSION EDITOR</h2>
+                      <p className="text-slate-400 text-sm mt-1">تعديل الأسئلة العامة للمهمة</p>
                     </div>
+                    <button 
+                      onClick={handleSaveAllQuestions}
+                      disabled={isSaving}
+                      className="px-12 py-5 bg-indigo-600 text-white rounded-[2rem] font-black text-xl shadow-2xl hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
+                    >
+                      {isSaving ? 'جاري الحفظ...' : 'حفظ التعديلات العامة ✅'}
+                    </button>
+                  </div>
 
-                    <div className="space-y-6">
-                      {vipQuestions.map((q, idx) => (
-                        <div key={idx} className="bg-slate-800/40 p-8 rounded-[40px] border border-white/5 shadow-xl">
-                          <div className="flex items-center gap-4 mb-6">
-                            <span className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center font-black">#{idx+1}</span>
-                            <h4 className="font-black text-lg uppercase">Question {idx+1}</h4>
+                  <div className="space-y-6">
+                    {adminQuestions.map((q, idx) => (
+                      <div key={idx} className="bg-slate-800/40 p-8 rounded-[40px] border border-white/5 shadow-xl">
+                        <div className="flex items-center gap-4 mb-6">
+                          <span className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center font-black">#{idx+1}</span>
+                          <h4 className="font-black text-lg uppercase">Mission Question {idx+1}</h4>
+                        </div>
+                        <div className="space-y-6">
+                          <textarea 
+                            placeholder="نص السؤال..." 
+                            className="w-full p-6 bg-slate-950 rounded-3xl border border-white/5 focus:border-indigo-500 min-h-[100px] outline-none"
+                            value={q.text}
+                            onChange={(e) => handleAdminQuestionChange(idx, 'text', e.target.value)}
+                          />
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {[1, 2, 3, 4].map(num => (
+                              <input 
+                                key={num}
+                                placeholder={`خيار الغرفة ${num}`}
+                                className="p-4 bg-slate-950 rounded-2xl text-xs border border-white/5 focus:border-indigo-400 outline-none" 
+                                value={(q as any)[`room${num}`]} 
+                                onChange={(e) => handleAdminQuestionChange(idx, `room${num}` as any, e.target.value)} 
+                              />
+                            ))}
                           </div>
-                          <div className="space-y-6">
-                            <textarea 
-                              placeholder="نص السؤال المخصص..." 
-                              className="w-full p-6 bg-slate-950 rounded-3xl border border-white/5 focus:border-indigo-500 min-h-[100px] outline-none"
-                              value={q.text}
-                              onChange={(e) => handleVipQuestionChange(idx, 'text', e.target.value)}
-                            />
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              {[1, 2, 3, 4].map(num => (
-                                <input 
-                                  key={num}
-                                  placeholder={`خيار الغرفة ${num}`}
-                                  className="p-4 bg-slate-950 rounded-2xl text-xs border border-white/5 focus:border-indigo-400" 
-                                  value={(q as any)[`room${num}`]} 
-                                  onChange={(e) => handleVipQuestionChange(idx, `room${num}` as any, e.target.value)} 
-                                />
-                              ))}
-                            </div>
-                            <div className="flex items-center justify-between p-6 bg-indigo-600/5 rounded-3xl border border-indigo-500/10">
-                              <span className="text-xs font-black text-indigo-400 uppercase">حدد الإجابة الصحيحة</span>
-                              <select 
-                                className="bg-slate-950 p-4 rounded-2xl font-black text-sm border border-indigo-500/30 text-indigo-400 outline-none"
-                                value={q.correct_index}
-                                onChange={(e) => handleVipQuestionChange(idx, 'correct_index', parseInt(e.target.value))}
-                              >
-                                <option value={0}>الغرفة 1</option>
-                                <option value={1}>الغرفة 2</option>
-                                <option value={2}>الغرفة 3</option>
-                                <option value={3}>الغرفة 4</option>
-                              </select>
-                            </div>
+                          <div className="flex items-center justify-between p-6 bg-indigo-600/5 rounded-3xl border border-indigo-500/10">
+                            <span className="text-xs font-black text-indigo-400 uppercase">الجواب الصحيح:</span>
+                            <select 
+                              className="bg-slate-950 p-4 rounded-2xl font-black text-sm border border-indigo-500/30 text-indigo-400 outline-none min-w-[150px]"
+                              value={q.correct_index}
+                              onChange={(e) => handleAdminQuestionChange(idx, 'correct_index', parseInt(e.target.value))}
+                            >
+                              <option value={0}>الغرفة 1</option>
+                              <option value={1}>الغرفة 2</option>
+                              <option value={2}>الغرفة 3</option>
+                              <option value={3}>الغرفة 4</option>
+                            </select>
                           </div>
                         </div>
-                      ))}
-                    </div>
+                      </div>
+                    ))}
                   </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center h-full opacity-20 text-center p-10">
-                    <span className="text-9xl mb-6">🛰️</span>
-                    <h3 className="text-3xl font-black italic">اختر مستخدماً من القائمة لبدء التخصيص</h3>
-                  </div>
-                )}
+                </div>
               </div>
             </>
           )}
@@ -407,7 +345,7 @@ const App: React.FC = () => {
       {(view === 'login' || view === 'register') && (
         <div className="flex items-center justify-center h-full p-6">
            <div className="bg-slate-900/90 backdrop-blur-3xl p-12 rounded-[50px] w-full max-w-md border border-white/5 text-center relative">
-              <button onClick={() => setView('landing')} className="absolute top-8 right-8 text-slate-500 font-bold hover:text-white">✕</button>
+              <button onClick={() => setView('landing')} className="absolute top-8 right-8 text-slate-500 font-bold hover:text-white transition-colors">✕</button>
               <h2 className="text-4xl font-black mb-2 italic">{view === 'login' ? 'WELCOME BACK' : 'JOIN THE MISSION'}</h2>
               <p className="text-slate-500 mb-10 text-sm">{view === 'login' ? 'أدخل بيانات الدخول للاستمرار' : 'سجل لتتمكن من المنافسة على لوحة الشرف'}</p>
               {authError && <div className="mb-6 p-4 bg-red-500/10 text-red-400 rounded-2xl text-xs font-bold">{authError}</div>}
