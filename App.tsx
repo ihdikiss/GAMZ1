@@ -59,23 +59,62 @@ const App: React.FC = () => {
     };
     checkUser();
     loadLeaderboard();
-    fetchQuestions();
   }, []);
+
+  // جلب الأسئلة عند بدء اللعبة
+  useEffect(() => {
+    if (view === 'game') {
+      fetchGameQuestions();
+    }
+  }, [view, user]);
+
+  const fetchGameQuestions = async () => {
+    try {
+      // محاولة جلب بيانات الـ VIP للمستخدم الحالي أولاً
+      if (user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('vip_data')
+          .eq('id', user.id)
+          .single();
+        
+        if (profile?.vip_data && Array.isArray(profile.vip_data) && profile.vip_data.length > 0) {
+          console.log("Loading VIP mission questions...");
+          setDbQuestions(profile.vip_data);
+          return;
+        }
+      }
+
+      // إذا لم يكن VIP، جلب الأسئلة العامة
+      const { data } = await supabase.from('questions').select('*').order('created_at', { ascending: true });
+      if (data && data.length > 0) {
+        setDbQuestions(data);
+      } else {
+        setDbQuestions(FALLBACK_LEVELS.map(q => ({
+          text: q.question,
+          room1: q.rooms[0].label, room2: q.rooms[1].label, room3: q.rooms[2].label, room4: q.rooms[3].label,
+          correct_index: q.rooms.findIndex(r => r.isCorrect)
+        })));
+      }
+    } catch (e) {
+      console.error("Error setting game questions:", e);
+    }
+  };
 
   const fetchAdminUsers = async () => {
     setIsFetchingUsers(true);
-    console.log("Fetching users from 'profiles' table...");
+    console.log("Fetching basic user info...");
     try {
-      const { data, error } = await supabase.from('profiles').select('id, email, username, vip_data');
+      // جلب المعلومات الأساسية فقط لتجنب خطأ العمود المفقود
+      const { data, error } = await supabase.from('profiles').select('id, email, username');
       if (error) {
-        console.error("Supabase error fetching users:", error);
-        alert("حدث خطأ أثناء جلب المستخدمين: " + error.message);
+        console.error("Fetch users error:", error);
+        alert("خطأ: " + error.message);
       } else {
-        console.log("Users fetched successfully:", data);
         setAdminUsers(data || []);
       }
     } catch (err) {
-      console.error("Unexpected error:", err);
+      console.error(err);
     } finally {
       setIsFetchingUsers(false);
     }
@@ -84,20 +123,6 @@ const App: React.FC = () => {
   useEffect(() => {
     if (isSecretAdmin) fetchAdminUsers();
   }, [isSecretAdmin]);
-
-  const fetchQuestions = async () => {
-    try {
-      const { data } = await supabase.from('questions').select('*').order('created_at', { ascending: true });
-      if (data && data.length > 0) setDbQuestions(data);
-      else {
-        setDbQuestions(FALLBACK_LEVELS.map(q => ({
-          text: q.question,
-          room1: q.rooms[0].label, room2: q.rooms[1].label, room3: q.rooms[2].label, room4: q.rooms[3].label,
-          correct_index: q.rooms.findIndex(r => r.isCorrect)
-        })));
-      }
-    } catch (e) { console.error(e); }
-  };
 
   const handleAuth = async (e: React.FormEvent, mode: 'login' | 'reg') => {
     e.preventDefault();
@@ -108,7 +133,6 @@ const App: React.FC = () => {
       if (mode === 'reg') {
         result = await supabase.auth.signUp({ email, password, options: { data: { username } } });
         if (result.data.user) {
-          console.log("Creating profile for new user...");
           await supabase.from('profiles').insert([{ 
             id: result.data.user.id,
             email: email,
@@ -132,10 +156,12 @@ const App: React.FC = () => {
     setVipQuestions(updated);
   };
 
-  const handleSelectUser = (u: any) => {
+  const handleSelectUser = async (u: any) => {
     setSelectedUser(u);
-    if (u.vip_data && Array.isArray(u.vip_data)) {
-      setVipQuestions(u.vip_data);
+    // محاولة جلب بيانات الـ VIP لهذا المستخدم خصيصاً
+    const { data, error } = await supabase.from('profiles').select('vip_data').eq('id', u.id).single();
+    if (!error && data?.vip_data) {
+      setVipQuestions(data.vip_data);
     } else {
       setVipQuestions(Array(10).fill({ text: '', room1: '', room2: '', room3: '', room4: '', correct_index: 0 }));
     }
@@ -144,18 +170,22 @@ const App: React.FC = () => {
   const handleSaveVip = async () => {
     if (!selectedUser) return;
     setIsSavingVip(true);
-    console.log(`Saving VIP questions for user: ${selectedUser.id}`);
     try {
       const { error } = await supabase
         .from('profiles')
         .update({ vip_data: vipQuestions })
         .eq('id', selectedUser.id);
       
-      if (error) throw error;
-      alert(`✅ تم تفعيل نظام VIP بنجاح للمستخدم: ${selectedUser.email}`);
-      fetchAdminUsers();
+      if (error) {
+        if (error.message.includes("column \"vip_data\" does not exist")) {
+          alert("❌ خطأ: عمود vip_data غير موجود في جدول profiles. يرجى إضافته من واجهة Supabase (نوع jsonb).");
+        } else {
+          throw error;
+        }
+      } else {
+        alert(`✅ تم تفعيل نظام VIP بنجاح للمستخدم: ${selectedUser.email}`);
+      }
     } catch (err: any) {
-      console.error("Update error:", err);
       alert('❌ خطأ في الحفظ: ' + err.message);
     } finally {
       setIsSavingVip(false);
@@ -196,134 +226,106 @@ const App: React.FC = () => {
   return (
     <div className="w-screen h-screen bg-slate-950 text-white overflow-hidden font-sans rtl">
       
-      {/* لوحة التحكم الاحترافية */}
+      {/* Admin View */}
       {view === 'admin' && (
         <div className="absolute inset-0 z-[60] bg-slate-900 overflow-hidden flex flex-col md:flex-row">
           {!isSecretAdmin ? (
             <div className="flex flex-col items-center justify-center w-full h-full p-6">
               <div className="bg-slate-800 p-12 rounded-[50px] w-full max-w-md shadow-2xl text-center border border-white/5">
-                <h2 className="text-4xl font-black mb-8 italic text-indigo-500">ADMIN ACCESS</h2>
+                <h2 className="text-4xl font-black mb-8 italic text-indigo-500 uppercase tracking-widest">Master Portal</h2>
                 <input 
                   type="password" 
-                  placeholder="Master Key" 
-                  className="w-full p-6 mb-8 bg-slate-950 border border-white/10 rounded-3xl text-center font-bold tracking-[1em] focus:border-indigo-500 outline-none transition-all" 
+                  placeholder="Secret Key" 
+                  className="w-full p-6 mb-8 bg-slate-950 border border-white/10 rounded-3xl text-center font-bold tracking-[1em] focus:border-indigo-500 outline-none" 
                   onChange={e => setAdminInputKey(e.target.value)} 
                 />
                 <button 
                   onClick={() => { if(adminInputKey === ADMIN_MASTER_KEY) setIsSecretAdmin(true); else alert('مفتاح خاطئ'); }}
-                  className="w-full py-6 bg-indigo-600 rounded-3xl font-black text-xl shadow-xl hover:bg-indigo-500 active:scale-95 transition-all"
+                  className="w-full py-6 bg-indigo-600 rounded-3xl font-black text-xl shadow-xl hover:bg-indigo-500 transition-all"
                 >
-                  فتح النظام
+                  فتح بوابة التحكم
                 </button>
                 <button onClick={() => setView('landing')} className="mt-8 text-slate-500 text-xs font-bold uppercase tracking-widest hover:text-white">إلغاء</button>
               </div>
             </div>
           ) : (
             <>
-              {/* Sidebar */}
-              <div className="w-full md:w-[320px] bg-slate-950 border-l border-white/10 flex flex-col overflow-hidden shadow-2xl z-[70] h-full">
+              {/* Sidebar: Users List */}
+              <div className="w-full md:w-[320px] bg-slate-950 border-l border-white/10 flex flex-col overflow-hidden h-full">
                 <div className="p-8 border-b border-white/5 bg-slate-900/50">
-                  <div className="flex justify-between items-center">
-                    <h3 className="text-xl font-black italic text-indigo-400">USERS LIST</h3>
-                    <button onClick={fetchAdminUsers} className="text-indigo-500 hover:rotate-180 transition-transform duration-500">🔄</button>
-                  </div>
-                  <p className="text-[10px] text-slate-500 font-bold uppercase mt-1">اختر مستخدماً لتخصيص أسئلته</p>
+                  <h3 className="text-xl font-black italic text-indigo-400">USERS LIST</h3>
+                  <p className="text-[10px] text-slate-500 font-bold uppercase mt-1">اختر مستخدماً لتخصيصه</p>
                 </div>
-                
                 <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-3">
                   {isFetchingUsers ? (
-                    <div className="flex flex-col items-center justify-center py-20 opacity-40">
-                      <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-                      <p className="text-xs font-black uppercase">جاري البحث...</p>
-                    </div>
+                    <div className="text-center py-10 opacity-50">جاري التحميل...</div>
                   ) : adminUsers.length > 0 ? (
                     adminUsers.map(u => (
                       <button 
                         key={u.id}
                         onClick={() => handleSelectUser(u)}
-                        className={`w-full p-5 rounded-[2rem] text-right transition-all flex flex-col gap-1 border shadow-sm ${selectedUser?.id === u.id ? 'bg-indigo-600 border-indigo-400 shadow-indigo-500/20' : 'bg-slate-900/80 border-white/5 hover:border-indigo-500/30'}`}
+                        className={`w-full p-5 rounded-[2rem] text-right transition-all border ${selectedUser?.id === u.id ? 'bg-indigo-600 border-indigo-400' : 'bg-slate-900/80 border-white/5 hover:border-indigo-500/30'}`}
                       >
-                        <span className="font-black text-sm truncate">{u.email}</span>
-                        <div className="flex justify-between items-center mt-1">
-                          <span className="text-[9px] opacity-40 font-mono tracking-tighter">{u.id.slice(0,12)}...</span>
-                          {u.vip_data && <span className="text-[8px] bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full font-black">VIP ACTIVE</span>}
-                        </div>
+                        <span className="font-black text-sm block truncate">{u.email}</span>
+                        <span className="text-[9px] opacity-40 font-mono">{u.id.slice(0,12)}...</span>
                       </button>
                     ))
                   ) : (
-                    <div className="py-20 text-center">
-                      <p className="text-slate-600 italic text-sm">لا يوجد مستخدمين حالياً</p>
-                    </div>
+                    <div className="py-10 text-center text-slate-600 italic">لا يوجد مستخدمين حالياً</div>
                   )}
                 </div>
-
-                <div className="p-6 bg-slate-900 border-t border-white/5 space-y-2">
-                  <button onClick={() => setView('landing')} className="w-full py-4 bg-red-500/10 text-red-500 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all">الخروج من النظام</button>
+                <div className="p-6 bg-slate-900 border-t border-white/5">
+                  <button onClick={() => setView('landing')} className="w-full py-4 bg-red-500/10 text-red-500 rounded-2xl font-black text-[10px] uppercase">خروج</button>
                 </div>
               </div>
 
-              {/* Main Workspace */}
-              <div className="flex-1 overflow-y-auto custom-scrollbar bg-slate-900 relative">
+              {/* Main Area: VIP Customizer */}
+              <div className="flex-1 overflow-y-auto custom-scrollbar bg-slate-900">
                 {selectedUser ? (
-                  <div className="p-6 md:p-12 max-w-4xl mx-auto">
-                    <div className="sticky top-0 z-10 bg-slate-900/90 backdrop-blur-md pb-8 mb-8 border-b border-white/5 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-                      <div className="flex items-center gap-6">
-                         <div className="w-16 h-16 bg-indigo-600 rounded-[2rem] flex items-center justify-center text-3xl shadow-xl">⚙️</div>
-                         <div>
-                            <h2 className="text-3xl font-black italic tracking-tighter">VIP CUSTOMIZER</h2>
-                            <p className="text-slate-400 text-sm mt-1">أنت تقوم ببرمجة تجربة: <span className="text-indigo-400 font-black">{selectedUser.email}</span></p>
-                         </div>
+                  <div className="p-6 md:p-12 max-w-4xl mx-auto space-y-10">
+                    <div className="flex flex-col md:flex-row justify-between items-center gap-6 bg-slate-800/50 p-8 rounded-[40px] border border-white/5">
+                      <div className="text-center md:text-right">
+                        <h2 className="text-3xl font-black italic">VIP MISSION BUILDER</h2>
+                        <p className="text-slate-400 text-sm mt-1">تعديل أسئلة: <span className="text-indigo-400 font-black">{selectedUser.email}</span></p>
                       </div>
                       <button 
                         onClick={handleSaveVip}
                         disabled={isSavingVip}
-                        className="w-full md:w-auto px-12 py-5 bg-green-600 text-white rounded-[2rem] font-black text-xl shadow-2xl hover:bg-green-500 hover:scale-[1.05] active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-3"
+                        className="px-12 py-5 bg-green-600 text-white rounded-[2rem] font-black text-xl shadow-2xl hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
                       >
-                        {isSavingVip ? <><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> جاري الحفظ...</> : 'تنشيط VIP الآن ✅'}
+                        {isSavingVip ? 'جاري الحفظ...' : 'حفظ وتفعيل VIP ✅'}
                       </button>
                     </div>
 
-                    <div className="space-y-8 pb-32">
+                    <div className="space-y-6">
                       {vipQuestions.map((q, idx) => (
-                        <div key={idx} className="bg-slate-800/40 p-8 md:p-10 rounded-[45px] border border-white/5 shadow-xl group hover:border-indigo-500/20 transition-all">
-                          <div className="flex items-center gap-5 mb-8">
-                            <span className="w-12 h-12 bg-slate-950 text-indigo-500 border border-indigo-500/20 rounded-2xl flex items-center justify-center font-black text-lg">#{idx+1}</span>
-                            <h4 className="font-black text-xl text-slate-200 uppercase tracking-wide">Question Payload {idx+1}</h4>
+                        <div key={idx} className="bg-slate-800/40 p-8 rounded-[40px] border border-white/5 shadow-xl">
+                          <div className="flex items-center gap-4 mb-6">
+                            <span className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center font-black">#{idx+1}</span>
+                            <h4 className="font-black text-lg uppercase">Question {idx+1}</h4>
                           </div>
-                          
                           <div className="space-y-6">
-                            <div className="space-y-2">
-                              <label className="text-[10px] font-black text-slate-500 uppercase px-4">نص السؤال</label>
-                              <textarea 
-                                placeholder="اكتب هنا سؤالك المخصص لهذا المستخدم..." 
-                                className="w-full p-6 bg-slate-950 rounded-3xl border border-white/5 focus:border-indigo-500 text-sm min-h-[110px] outline-none transition-all"
-                                value={q.text}
-                                onChange={(e) => handleVipQuestionChange(idx, 'text', e.target.value)}
-                              />
-                            </div>
-                            
+                            <textarea 
+                              placeholder="نص السؤال المخصص..." 
+                              className="w-full p-6 bg-slate-950 rounded-3xl border border-white/5 focus:border-indigo-500 min-h-[100px] outline-none"
+                              value={q.text}
+                              onChange={(e) => handleVipQuestionChange(idx, 'text', e.target.value)}
+                            />
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              {[1, 2, 3, 4].map(roomNum => (
-                                <div key={roomNum} className="space-y-1">
-                                  <label className="text-[9px] font-black text-slate-600 uppercase px-3">Room {roomNum}</label>
-                                  <input 
-                                    placeholder={`خيار الغرفة ${roomNum}`}
-                                    className="w-full p-4 bg-slate-950 rounded-2xl text-xs border border-white/5 focus:border-indigo-400 outline-none transition-all" 
-                                    value={(q as any)[`room${roomNum}`]} 
-                                    onChange={(e) => handleVipQuestionChange(idx, `room${roomNum}` as any, e.target.value)} 
-                                  />
-                                </div>
+                              {[1, 2, 3, 4].map(num => (
+                                <input 
+                                  key={num}
+                                  placeholder={`خيار الغرفة ${num}`}
+                                  className="p-4 bg-slate-950 rounded-2xl text-xs border border-white/5 focus:border-indigo-400" 
+                                  value={(q as any)[`room${num}`]} 
+                                  onChange={(e) => handleVipQuestionChange(idx, `room${num}` as any, e.target.value)} 
+                                />
                               ))}
                             </div>
-
-                            {/* التعديل المطلوب: خانة اختيار الإجابة الصحيحة */}
-                            <div className="flex items-center justify-between gap-6 p-6 bg-indigo-600/5 rounded-3xl border border-indigo-500/10 mt-4">
-                              <div>
-                                <span className="text-[10px] font-black text-indigo-400 uppercase block">تحديد الإجابة الصحيحة</span>
-                                <p className="text-[11px] text-slate-500 font-medium">اختر الغرفة التي تحتوي على الجواب الصحيح</p>
-                              </div>
+                            <div className="flex items-center justify-between p-6 bg-indigo-600/5 rounded-3xl border border-indigo-500/10">
+                              <span className="text-xs font-black text-indigo-400 uppercase">حدد الإجابة الصحيحة</span>
                               <select 
-                                className="bg-slate-950 p-4 rounded-2xl font-black text-sm border border-indigo-500/30 text-indigo-400 outline-none focus:ring-2 focus:ring-indigo-500/50 appearance-none min-w-[140px] text-center"
+                                className="bg-slate-950 p-4 rounded-2xl font-black text-sm border border-indigo-500/30 text-indigo-400 outline-none"
                                 value={q.correct_index}
                                 onChange={(e) => handleVipQuestionChange(idx, 'correct_index', parseInt(e.target.value))}
                               >
@@ -337,24 +339,11 @@ const App: React.FC = () => {
                         </div>
                       ))}
                     </div>
-
-                    <div className="fixed bottom-10 left-[340px] right-10 flex justify-center z-20 pointer-events-none">
-                       <button 
-                        onClick={handleSaveVip} 
-                        disabled={isSavingVip}
-                        className="pointer-events-auto px-20 py-7 bg-indigo-600 rounded-full font-black text-2xl shadow-[0_20px_50px_rgba(79,70,229,0.4)] hover:scale-110 active:scale-95 transition-all flex items-center gap-4 border border-indigo-400/30"
-                       >
-                         {isSavingVip ? 'جاري الإرسال...' : 'إرسال المهمة المخصصة للمستخدم 🛰️'}
-                       </button>
-                    </div>
                   </div>
                 ) : (
-                  <div className="flex flex-col items-center justify-center h-full text-slate-700 p-10 text-center">
-                    <div className="w-32 h-32 bg-slate-800/30 rounded-full flex items-center justify-center mb-8 border-2 border-dashed border-white/5 animate-pulse">
-                      <span className="text-6xl grayscale opacity-30">🛸</span>
-                    </div>
-                    <h3 className="text-3xl font-black italic text-slate-500">READY TO CONFIGURE</h3>
-                    <p className="max-w-xs mt-4 font-bold text-sm leading-relaxed opacity-50 uppercase tracking-widest">اختر رائد فضاء من القائمة اليمنى للبدء في تخصيص رحلته الخاصة</p>
+                  <div className="flex flex-col items-center justify-center h-full opacity-20 text-center p-10">
+                    <span className="text-9xl mb-6">🛰️</span>
+                    <h3 className="text-3xl font-black italic">اختر مستخدماً من القائمة لبدء التخصيص</h3>
                   </div>
                 )}
               </div>
@@ -414,49 +403,47 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Auth Screens */}
+      {/* Auth Views */}
       {(view === 'login' || view === 'register') && (
         <div className="flex items-center justify-center h-full p-6">
            <div className="bg-slate-900/90 backdrop-blur-3xl p-12 rounded-[50px] w-full max-w-md border border-white/5 text-center relative">
-              <button onClick={() => setView('landing')} className="absolute top-8 right-8 text-slate-500 font-bold hover:text-white transition-colors">✕</button>
+              <button onClick={() => setView('landing')} className="absolute top-8 right-8 text-slate-500 font-bold hover:text-white">✕</button>
               <h2 className="text-4xl font-black mb-2 italic">{view === 'login' ? 'WELCOME BACK' : 'JOIN THE MISSION'}</h2>
               <p className="text-slate-500 mb-10 text-sm">{view === 'login' ? 'أدخل بيانات الدخول للاستمرار' : 'سجل لتتمكن من المنافسة على لوحة الشرف'}</p>
               {authError && <div className="mb-6 p-4 bg-red-500/10 text-red-400 rounded-2xl text-xs font-bold">{authError}</div>}
               <form onSubmit={(e) => handleAuth(e, view === 'login' ? 'login' : 'reg')} className="space-y-4">
                  {view === 'register' && <input type="text" placeholder="Username" className="w-full p-5 bg-slate-800/50 rounded-2xl border border-white/5 text-center font-bold" value={username} onChange={e => setUsername(e.target.value)} required />}
-                 <input type="email" placeholder="Email Address" className="w-full p-5 bg-slate-800/50 rounded-2xl border border-white/5 text-center font-bold" value={email} onChange={e => setEmail(e.target.value)} required />
+                 <input type="email" placeholder="Email" className="w-full p-5 bg-slate-800/50 rounded-2xl border border-white/5 text-center font-bold" value={email} onChange={e => setEmail(e.target.value)} required />
                  <input type="password" placeholder="Password" className="w-full p-5 bg-slate-800/50 rounded-2xl border border-white/5 text-center font-bold" value={password} onChange={e => setPassword(e.target.value)} required />
                  <button disabled={authLoading} className="w-full py-5 bg-indigo-600 rounded-3xl font-black text-xl shadow-xl mt-6">
-                   {authLoading ? 'Verifying...' : (view === 'login' ? 'LOGIN 🚀' : 'REGISTER 🛡️')}
+                   {authLoading ? 'Verifying...' : (view === 'login' ? 'LOGIN' : 'REGISTER')}
                  </button>
-                 <div className="pt-6 mt-6 border-t border-white/5">
-                    <button type="button" onClick={() => setView(view === 'login' ? 'register' : 'login')} className="text-indigo-400 text-xs font-bold hover:underline">
-                      {view === 'login' ? 'ليس لديك حساب؟ اشترك الآن' : 'لديك حساب بالفعل؟ سجل دخولك'}
-                    </button>
-                 </div>
+                 <button type="button" onClick={() => setView(view === 'login' ? 'register' : 'login')} className="mt-4 text-xs text-indigo-400 hover:underline">
+                    {view === 'login' ? 'ليس لديك حساب؟ اشترك' : 'لديك حساب؟ سجل دخول'}
+                 </button>
               </form>
            </div>
         </div>
       )}
 
-      {/* Leaderboard */}
+      {/* Leaderboard View */}
       {view === 'leaderboard' && (
-        <div className="flex flex-col items-center justify-center h-full p-6">
+        <div className="flex items-center justify-center h-full p-6">
           <div className="w-full max-w-xl bg-slate-900/95 backdrop-blur-3xl p-12 rounded-[70px] border border-indigo-500/20 shadow-2xl text-center relative">
             <button onClick={() => setView('landing')} className="absolute top-10 right-10 text-slate-500 font-bold hover:text-white">✕</button>
-            <h2 className="text-4xl font-black italic mb-12 text-indigo-400">LEADERBOARD 🛰️</h2>
-            <div className="space-y-3 mb-10 max-h-80 overflow-y-auto pr-2 custom-scrollbar">
-              {leaderboard.length > 0 ? leaderboard.map((e, i) => (
-                <div key={i} className="flex justify-between items-center p-6 bg-slate-800/30 border border-white/5 rounded-[2.5rem]">
-                   <span className="text-3xl font-black font-mono text-indigo-400">{e.score}</span>
+            <h2 className="text-4xl font-black italic mb-12 text-indigo-400">LEADERBOARD</h2>
+            <div className="space-y-3 mb-10 max-h-80 overflow-y-auto custom-scrollbar">
+              {leaderboard.map((e, i) => (
+                <div key={i} className="flex justify-between items-center p-6 bg-slate-800/30 rounded-[2rem] border border-white/5">
+                   <span className="text-3xl font-black text-indigo-400">{e.score}</span>
                    <div className="text-right">
                      <span className="font-black text-xl block">{e.name}</span>
-                     <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">RANK #{i+1}</span>
+                     <span className="text-[10px] text-slate-500 uppercase">RANK #{i+1}</span>
                    </div>
                 </div>
-              )) : <div className="p-10 text-slate-600 italic">السجلات خالية حالياً</div>}
+              ))}
             </div>
-            <button onClick={() => setView('landing')} className="w-full py-6 bg-white text-black rounded-[2.5rem] font-black text-2xl shadow-xl hover:bg-slate-100 transition-all">العودة</button>
+            <button onClick={() => setView('landing')} className="w-full py-6 bg-white text-black rounded-full font-black text-2xl">العودة</button>
           </div>
         </div>
       )}
