@@ -54,9 +54,6 @@ export default class MazeScene extends Phaser.Scene {
 
   private spawnDynamicEnemies() {
     this.enemies.clear(true, true);
-    
-    // معادلة الصعوبة: نبدأ بـ 2 أعداء.
-    // يتم إضافة عدو عند السؤال الثالث (index 2)، السادس (index 5)، التاسع (index 8)
     const enemyCount = 2 + Math.floor((this.levelIdx + 1) / 3);
     
     for (let i = 0; i < enemyCount; i++) {
@@ -67,11 +64,10 @@ export default class MazeScene extends Phaser.Scene {
       } while (MAZE_DATA[y][x] === 1);
 
       const enemy = this.createEnemy(x * TILE_SIZE + TILE_SIZE/2, y * TILE_SIZE + TILE_SIZE/2);
-      
-      // العدو الأول دائماً هو "المطارد السريع" لزيادة التحدي
       if (i === 0) {
         (enemy as any).isStalker = true;
-        (enemy.getAt(0) as Phaser.GameObjects.Circle).setFillStyle(0xffffff); // لون أبيض للمطارد
+        const visual = enemy.getAt(0) as Phaser.GameObjects.Circle;
+        visual.setFillStyle(0xffffff);
       }
     }
   }
@@ -105,8 +101,9 @@ export default class MazeScene extends Phaser.Scene {
   }
 
   private handleEnemyCollision() {
-    if ((this.player as any).invulnerable) return;
-    (this.player as any).invulnerable = true;
+    const p = this.player as any;
+    if (p.invulnerable) return;
+    p.invulnerable = true;
     this.cameras.main.shake(200, 0.02);
     window.dispatchEvent(new CustomEvent('maze-game-event', { detail: { type: 'LOSE_LIFE' } }));
     this.tweens.add({ targets: this.player, alpha: 0, duration: 100, yoyo: true, repeat: 5, onComplete: () => { this.player.alpha = 1; (this.player as any).invulnerable = false; } });
@@ -116,7 +113,8 @@ export default class MazeScene extends Phaser.Scene {
     const body = this.add.circle(0, 0, 16, 0x6366f1);
     this.player = this.add.container(TILE_SIZE * 1.5, TILE_SIZE * 1.5, [body]);
     this.physics.add.existing(this.player);
-    (this.player.body as Phaser.Physics.Arcade.Body).setCircle(14, -14, -14).setCollideWorldBounds(true);
+    const b = this.player.body as Phaser.Physics.Arcade.Body;
+    b.setCircle(14, -14, -14).setCollideWorldBounds(true);
   }
 
   private createBackground() {
