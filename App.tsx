@@ -35,6 +35,7 @@ const App: React.FC = () => {
     Array(10).fill({ text: '', room1: '', room2: '', room3: '', room4: '', correct_index: 0 })
   );
   const [isSavingVip, setIsSavingVip] = useState(false);
+  const [isFetchingUsers, setIsFetchingUsers] = useState(false);
   
   // Auth states
   const [email, setEmail] = useState('');
@@ -62,9 +63,22 @@ const App: React.FC = () => {
   }, []);
 
   const fetchAdminUsers = async () => {
-    // جلب المستخدمين من جدول profiles
-    const { data, error } = await supabase.from('profiles').select('id, email, username');
-    if (!error && data) setAdminUsers(data);
+    setIsFetchingUsers(true);
+    console.log("Fetching users from 'profiles' table...");
+    try {
+      const { data, error } = await supabase.from('profiles').select('id, email, username, vip_data');
+      if (error) {
+        console.error("Supabase error fetching users:", error);
+        alert("حدث خطأ أثناء جلب المستخدمين: " + error.message);
+      } else {
+        console.log("Users fetched successfully:", data);
+        setAdminUsers(data || []);
+      }
+    } catch (err) {
+      console.error("Unexpected error:", err);
+    } finally {
+      setIsFetchingUsers(false);
+    }
   };
 
   useEffect(() => {
@@ -94,7 +108,8 @@ const App: React.FC = () => {
       if (mode === 'reg') {
         result = await supabase.auth.signUp({ email, password, options: { data: { username } } });
         if (result.data.user) {
-          // إنشاء بروفايل في جدول profiles
+          console.log("Creating profile for new user...");
+          // إنشاء بروفايل في جدول profiles لضمان تتبع المستخدم
           await supabase.from('profiles').insert([{ 
             id: result.data.user.id,
             email: email,
@@ -119,9 +134,20 @@ const App: React.FC = () => {
     setVipQuestions(updated);
   };
 
+  const handleSelectUser = (u: any) => {
+    setSelectedUser(u);
+    // إذا كان للمستخدم بيانات VIP سابقة، قم بتحميلها في النموذج
+    if (u.vip_data && Array.isArray(u.vip_data)) {
+      setVipQuestions(u.vip_data);
+    } else {
+      setVipQuestions(Array(10).fill({ text: '', room1: '', room2: '', room3: '', room4: '', correct_index: 0 }));
+    }
+  };
+
   const handleSaveVip = async () => {
     if (!selectedUser) return;
     setIsSavingVip(true);
+    console.log(`Saving VIP questions for user: ${selectedUser.id}`);
     try {
       const { error } = await supabase
         .from('profiles')
@@ -129,9 +155,11 @@ const App: React.FC = () => {
         .eq('id', selectedUser.id);
       
       if (error) throw error;
-      alert(`تم تفعيل نظام VIP بنجاح للمستخدم: ${selectedUser.email}`);
+      alert(`✅ تم تفعيل نظام VIP بنجاح للمستخدم: ${selectedUser.email}`);
+      fetchAdminUsers(); // تحديث القائمة لضمان البيانات الجديدة
     } catch (err: any) {
-      alert('خطأ في الحفظ: ' + err.message);
+      console.error("Update error:", err);
+      alert('❌ خطأ في الحفظ: ' + err.message);
     } finally {
       setIsSavingVip(false);
     }
@@ -173,7 +201,7 @@ const App: React.FC = () => {
       
       {/* لوحة التحكم الاحترافية */}
       {view === 'admin' && (
-        <div className="absolute inset-0 z-50 bg-slate-900 overflow-hidden flex flex-col md:flex-row">
+        <div className="absolute inset-0 z-[60] bg-slate-900 overflow-hidden flex flex-col md:flex-row">
           {!isSecretAdmin ? (
             <div className="flex flex-col items-center justify-center w-full h-full p-6">
               <div className="bg-slate-800 p-12 rounded-[50px] w-full max-w-md shadow-2xl text-center border border-white/5">
@@ -195,73 +223,112 @@ const App: React.FC = () => {
             </div>
           ) : (
             <>
-              {/* شريط جانبي للمستخدمين */}
-              <div className="w-full md:w-80 bg-slate-950 border-l border-white/5 flex flex-col overflow-hidden shadow-2xl z-20">
-                <div className="p-8 border-b border-white/5">
-                  <h3 className="text-xl font-black italic text-indigo-400">USERS LIST</h3>
+              {/* شريط جانبي للمستخدمين - Sidebar */}
+              <div className="w-full md:w-[320px] bg-slate-950 border-l border-white/10 flex flex-col overflow-hidden shadow-2xl z-[70] h-full">
+                <div className="p-8 border-b border-white/5 bg-slate-900/50">
+                  <div className="flex justify-between items-center">
+                    <h3 className="text-xl font-black italic text-indigo-400">USERS LIST</h3>
+                    <button onClick={fetchAdminUsers} className="text-indigo-500 hover:rotate-180 transition-transform duration-500">🔄</button>
+                  </div>
                   <p className="text-[10px] text-slate-500 font-bold uppercase mt-1">اختر مستخدماً لتخصيص أسئلته</p>
                 </div>
-                <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-2">
-                  {adminUsers.map(u => (
-                    <button 
-                      key={u.id}
-                      onClick={() => setSelectedUser(u)}
-                      className={`w-full p-4 rounded-2xl text-right transition-all flex flex-col gap-1 border ${selectedUser?.id === u.id ? 'bg-indigo-600 border-indigo-400 shadow-lg' : 'bg-slate-900/50 border-white/5 hover:bg-slate-800'}`}
-                    >
-                      <span className="font-bold text-sm truncate">{u.email}</span>
-                      <span className="text-[10px] opacity-50 font-mono">ID: {u.id.slice(0,8)}...</span>
-                    </button>
-                  ))}
+                
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-3">
+                  {isFetchingUsers ? (
+                    <div className="flex flex-col items-center justify-center py-20 opacity-40">
+                      <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+                      <p className="text-xs font-black uppercase">جاري البحث...</p>
+                    </div>
+                  ) : adminUsers.length > 0 ? (
+                    adminUsers.map(u => (
+                      <button 
+                        key={u.id}
+                        onClick={() => handleSelectUser(u)}
+                        className={`w-full p-5 rounded-[2rem] text-right transition-all flex flex-col gap-1 border shadow-sm ${selectedUser?.id === u.id ? 'bg-indigo-600 border-indigo-400 shadow-indigo-500/20' : 'bg-slate-900/80 border-white/5 hover:border-indigo-500/30'}`}
+                      >
+                        <span className="font-black text-sm truncate">{u.email}</span>
+                        <div className="flex justify-between items-center mt-1">
+                          <span className="text-[9px] opacity-40 font-mono tracking-tighter">{u.id.slice(0,12)}...</span>
+                          {u.vip_data && <span className="text-[8px] bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full font-black">VIP ACTIVE</span>}
+                        </div>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="py-20 text-center">
+                      <p className="text-slate-600 italic text-sm">لا يوجد مستخدمين حالياً</p>
+                    </div>
+                  )}
                 </div>
-                <div className="p-4 bg-slate-900/50 border-t border-white/5">
-                  <button onClick={() => setView('landing')} className="w-full py-4 bg-red-500/10 text-red-500 rounded-xl font-black text-xs uppercase hover:bg-red-500/20 transition-all">تسجيل الخروج</button>
+
+                <div className="p-6 bg-slate-900 border-t border-white/5 space-y-2">
+                  <button onClick={() => setView('landing')} className="w-full py-4 bg-red-500/10 text-red-500 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all">الخروج من النظام</button>
                 </div>
               </div>
 
-              {/* منطقة العمل الرئيسية */}
-              <div className="flex-1 overflow-y-auto custom-scrollbar bg-slate-900">
+              {/* منطقة العمل الرئيسية - Form */}
+              <div className="flex-1 overflow-y-auto custom-scrollbar bg-slate-900 relative">
                 {selectedUser ? (
-                  <div className="p-8 md:p-16 max-w-4xl mx-auto space-y-12">
-                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-                      <div>
-                        <h2 className="text-4xl font-black italic">VIP CONFIGURATOR</h2>
-                        <p className="text-slate-400 mt-2 font-medium italic">أنت تقوم بتعديل أسئلة: <span className="text-indigo-400 font-bold">{selectedUser.email}</span></p>
+                  <div className="p-6 md:p-12 max-w-4xl mx-auto">
+                    {/* Header لنموذج التخصيص */}
+                    <div className="sticky top-0 z-10 bg-slate-900/90 backdrop-blur-md pb-8 mb-8 border-b border-white/5 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                      <div className="flex items-center gap-6">
+                         <div className="w-16 h-16 bg-indigo-600 rounded-[2rem] flex items-center justify-center text-3xl shadow-xl">⚙️</div>
+                         <div>
+                            <h2 className="text-3xl font-black italic tracking-tighter">VIP CUSTOMIZER</h2>
+                            <p className="text-slate-400 text-sm mt-1">أنت تقوم ببرمجة تجربة: <span className="text-indigo-400 font-black">{selectedUser.email}</span></p>
+                         </div>
                       </div>
                       <button 
                         onClick={handleSaveVip}
                         disabled={isSavingVip}
-                        className="px-10 py-5 bg-green-600 text-white rounded-[2rem] font-black text-xl shadow-2xl hover:bg-green-500 hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
+                        className="w-full md:w-auto px-12 py-5 bg-green-600 text-white rounded-[2rem] font-black text-xl shadow-2xl hover:bg-green-500 hover:scale-[1.05] active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-3"
                       >
-                        {isSavingVip ? 'جاري الحفظ...' : 'حفظ وتفعيل VIP ✅'}
+                        {isSavingVip ? <><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> جاري الحفظ...</> : 'تنشيط VIP الآن ✅'}
                       </button>
                     </div>
 
-                    <div className="space-y-6">
+                    {/* قائمة الأسئلة الـ 10 */}
+                    <div className="space-y-8 pb-32">
                       {vipQuestions.map((q, idx) => (
-                        <div key={idx} className="bg-slate-800/80 p-8 rounded-[40px] border border-white/5 shadow-inner">
-                          <div className="flex items-center gap-4 mb-6">
-                            <span className="w-10 h-10 bg-indigo-600 rounded-full flex items-center justify-center font-black text-xs">Q{idx+1}</span>
-                            <h4 className="font-bold text-indigo-300">السؤال رقم {idx+1}</h4>
+                        <div key={idx} className="bg-slate-800/40 p-8 md:p-10 rounded-[45px] border border-white/5 shadow-xl group hover:border-indigo-500/20 transition-all">
+                          <div className="flex items-center gap-5 mb-8">
+                            <span className="w-12 h-12 bg-slate-950 text-indigo-500 border border-indigo-500/20 rounded-2xl flex items-center justify-center font-black text-lg">#{idx+1}</span>
+                            <h4 className="font-black text-xl text-slate-200 uppercase tracking-wide">Question Payload {idx+1}</h4>
                           </div>
-                          <div className="space-y-4">
-                            <input 
-                              type="text" 
-                              placeholder="نص السؤال هنا..." 
-                              className="w-full p-5 bg-slate-900 rounded-2xl border border-white/5 focus:border-indigo-500 text-sm"
-                              value={q.text}
-                              onChange={(e) => handleVipQuestionChange(idx, 'text', e.target.value)}
-                            />
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                              <input placeholder="الخيار 1" className="p-4 bg-slate-900 rounded-xl text-xs" value={q.room1} onChange={(e) => handleVipQuestionChange(idx, 'room1', e.target.value)} />
-                              <input placeholder="الخيار 2" className="p-4 bg-slate-900 rounded-xl text-xs" value={q.room2} onChange={(e) => handleVipQuestionChange(idx, 'room2', e.target.value)} />
-                              <input placeholder="الخيار 3" className="p-4 bg-slate-900 rounded-xl text-xs" value={q.room3} onChange={(e) => handleVipQuestionChange(idx, 'room3', e.target.value)} />
-                              <input placeholder="الخيار 4" className="p-4 bg-slate-900 rounded-xl text-xs" value={q.room4} onChange={(e) => handleVipQuestionChange(idx, 'room4', e.target.value)} />
+                          
+                          <div className="space-y-6">
+                            <div className="space-y-2">
+                              <label className="text-[10px] font-black text-slate-500 uppercase px-4">نص السؤال</label>
+                              <textarea 
+                                placeholder="اكتب هنا سؤالك المخصص لهذا المستخدم..." 
+                                className="w-full p-6 bg-slate-950 rounded-3xl border border-white/5 focus:border-indigo-500 text-sm min-h-[110px] outline-none transition-all"
+                                value={q.text}
+                                onChange={(e) => handleVipQuestionChange(idx, 'text', e.target.value)}
+                              />
                             </div>
-                            <div className="flex items-center gap-4 p-4 bg-indigo-900/10 rounded-2xl border border-indigo-500/10">
-                              <span className="text-[10px] font-black text-indigo-400 uppercase">مؤشر الإجابة الصحيحة (0-3):</span>
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              {[1, 2, 3, 4].map(roomNum => (
+                                <div key={roomNum} className="space-y-1">
+                                  <label className="text-[9px] font-black text-slate-600 uppercase px-3">Room {roomNum}</label>
+                                  <input 
+                                    placeholder={`خيار الغرفة ${roomNum}`}
+                                    className="w-full p-4 bg-slate-950 rounded-2xl text-xs border border-white/5 focus:border-indigo-400 outline-none transition-all" 
+                                    value={(q as any)[`room${roomNum}`]} 
+                                    onChange={(e) => handleVipQuestionChange(idx, `room${roomNum}` as any, e.target.value)} 
+                                  />
+                                </div>
+                              ))}
+                            </div>
+
+                            <div className="flex items-center justify-between gap-6 p-6 bg-indigo-600/5 rounded-3xl border border-indigo-500/10 mt-4">
+                              <div>
+                                <span className="text-[10px] font-black text-indigo-400 uppercase block">الإجابة الصحيحة</span>
+                                <p className="text-[11px] text-slate-500 font-medium">اختر رقم الغرفة (0=الغرفة 1، 1=الغرفة 2...)</p>
+                              </div>
                               <input 
                                 type="number" min="0" max="3" 
-                                className="w-16 p-2 bg-slate-900 rounded-lg text-center font-bold"
+                                className="w-20 p-4 bg-slate-950 rounded-2xl text-center font-black text-xl border border-indigo-500/30 text-indigo-400 focus:shadow-[0_0_15px_rgba(79,70,229,0.2)]"
                                 value={q.correct_index}
                                 onChange={(e) => handleVipQuestionChange(idx, 'correct_index', parseInt(e.target.value))}
                               />
@@ -271,16 +338,24 @@ const App: React.FC = () => {
                       ))}
                     </div>
 
-                    <div className="py-20 text-center">
-                       <button onClick={handleSaveVip} className="px-16 py-6 bg-indigo-600 rounded-full font-black text-2xl shadow-2xl hover:scale-110 transition-all">إرسال جميع الأسئلة للمستخدم 🛰️</button>
+                    {/* زر الحفظ النهائي في الأسفل */}
+                    <div className="fixed bottom-10 left-[340px] right-10 flex justify-center z-20 pointer-events-none">
+                       <button 
+                        onClick={handleSaveVip} 
+                        disabled={isSavingVip}
+                        className="pointer-events-auto px-20 py-7 bg-indigo-600 rounded-full font-black text-2xl shadow-[0_20px_50px_rgba(79,70,229,0.4)] hover:scale-110 active:scale-95 transition-all flex items-center gap-4 border border-indigo-400/30"
+                       >
+                         {isSavingVip ? 'جاري الإرسال...' : 'إرسال المهمة المخصصة للمستخدم 🛰️'}
+                       </button>
                     </div>
                   </div>
                 ) : (
-                  <div className="flex flex-col items-center justify-center h-full text-slate-600">
-                    <div className="w-24 h-24 bg-slate-800 rounded-full flex items-center justify-center mb-6 border border-white/5 animate-bounce">
-                      <span className="text-4xl text-indigo-500">☝️</span>
+                  <div className="flex flex-col items-center justify-center h-full text-slate-700 p-10 text-center">
+                    <div className="w-32 h-32 bg-slate-800/30 rounded-full flex items-center justify-center mb-8 border-2 border-dashed border-white/5 animate-pulse">
+                      <span className="text-6xl grayscale opacity-30">🛸</span>
                     </div>
-                    <p className="text-xl font-bold italic">الرجاء اختيار مستخدم من القائمة الجانبية للبدء</p>
+                    <h3 className="text-3xl font-black italic text-slate-500">READY TO CONFIGURE</h3>
+                    <p className="max-w-xs mt-4 font-bold text-sm leading-relaxed opacity-50 uppercase tracking-widest">اختر رائد فضاء من القائمة اليمنى للبدء في تخصيص رحلته الخاصة</p>
                   </div>
                 )}
               </div>
