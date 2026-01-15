@@ -80,8 +80,12 @@ const App: React.FC = () => {
         console.error("Auth init failed", e);
       }
       
+      // منطق التوجيه للوحة التحكم
       const params = new URLSearchParams(window.location.search);
-      if (params.get('access') === 'portal') {
+      const isPortalAccess = params.get('access') === 'portal';
+      const isPathAccess = window.location.pathname === '/admin';
+      
+      if (isPortalAccess || isPathAccess) {
         setView('admin');
       }
     };
@@ -139,7 +143,8 @@ const App: React.FC = () => {
   return (
     <div className="w-screen h-screen bg-slate-950 text-white overflow-hidden font-sans rtl">
       {view === 'admin' && <AdminPanel onExit={() => {
-        window.history.replaceState({}, '', window.location.pathname);
+        // تنظيف الرابط عند الخروج
+        window.history.replaceState({}, '', '/');
         setView('landing');
       }} />}
 
