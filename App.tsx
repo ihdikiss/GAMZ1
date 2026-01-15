@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import GameComponent from './components/GameComponent';
 import AdminPanel from './components/AdminPanel';
 import { GAME_LEVELS as FALLBACK_LEVELS } from './game/constants';
-import { supabase } from './supabase';
+import { supabase, isConfigured } from './supabase';
 
 interface LeaderboardEntry { name: string; score: number; }
 interface QuestionData {
@@ -31,7 +31,6 @@ const App: React.FC = () => {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [dbQuestions, setDbQuestions] = useState<QuestionData[]>([]);
   
-  // Auth states
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
@@ -39,48 +38,58 @@ const App: React.FC = () => {
   const [authError, setAuthError] = useState('');
 
   const fetchQuestions = useCallback(async () => {
+    if (!isConfigured()) {
+      applyFallbacks();
+      return;
+    }
     try {
       const { data, error } = await supabase.from('questions').select('*').order('created_at', { ascending: true });
       if (!error && data && data.length > 0) {
         setDbQuestions(data as any[]);
       } else {
-        const fallbacks: QuestionData[] = FALLBACK_LEVELS.map(q => ({
-          text: q.question,
-          room1: q.rooms[0].label,
-          room2: q.rooms[1].label,
-          room3: q.rooms[2].label,
-          room4: q.rooms[3].label,
-          correct_index: q.rooms.findIndex(r => r.isCorrect)
-        }));
-        setDbQuestions(fallbacks);
+        applyFallbacks();
       }
     } catch (e) {
-      console.warn("Using fallback questions - check connection settings");
+      applyFallbacks();
     }
   }, []);
 
+  const applyFallbacks = () => {
+    const fallbacks: QuestionData[] = FALLBACK_LEVELS.map(q => ({
+      text: q.question,
+      room1: q.rooms[0].label,
+      room2: q.rooms[1].label,
+      room3: q.rooms[2].label,
+      room4: q.rooms[3].label,
+      correct_index: q.rooms.findIndex(r => r.isCorrect)
+    }));
+    setDbQuestions(fallbacks);
+  };
+
   const loadLeaderboard = useCallback(async () => {
+    if (!isConfigured()) return;
     try {
       const { data } = await supabase.from('leaderboard').select('name, score').order('score', { ascending: false }).limit(10);
       if (data) setLeaderboard(data as LeaderboardEntry[]);
     } catch (e) {
-      console.error("Leaderboard error", e);
+      console.warn("Could not load leaderboard");
     }
   }, []);
 
   useEffect(() => {
     const initSession = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          setUser(session.user);
-          setUsername(session.user.user_metadata.username || session.user.email?.split('@')[0]);
+        if (isConfigured()) {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.user) {
+            setUser(session.user);
+            setUsername(session.user.user_metadata.username || session.user.email?.split('@')[0]);
+          }
         }
       } catch (e) {
         console.error("Auth init failed", e);
       }
       
-      // منطق التوجيه للوحة التحكم
       const params = new URLSearchParams(window.location.search);
       const isPortalAccess = params.get('access') === 'portal';
       const isPathAccess = window.location.pathname === '/admin';
@@ -94,15 +103,20 @@ const App: React.FC = () => {
     loadLeaderboard();
     fetchQuestions();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user || null);
-    });
-
-    return () => subscription.unsubscribe();
+    if (isConfigured()) {
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        setUser(session?.user || null);
+      });
+      return () => subscription.unsubscribe();
+    }
   }, [fetchQuestions, loadLeaderboard]);
 
   const handleAuth = async (e: React.FormEvent, mode: 'login' | 'reg') => {
     e.preventDefault();
+    if (!isConfigured()) {
+      setAuthError("تنبيه: قاعدة البيانات غير معدة بشكل كامل حالياً.");
+      return;
+    }
     setAuthLoading(true);
     setAuthError('');
     try {
@@ -128,11 +142,7 @@ const App: React.FC = () => {
       }
     } catch (err: any) {
       console.error("Auth error:", err);
-      if (err.message.includes("Invalid login credentials") || err.message.includes("Failed to fetch")) {
-        setAuthError("خطأ في البيانات أو في الاتصال بقاعدة البيانات. تأكد من تفعيل VPN أو إعدادات السيرفر.");
-      } else {
-        setAuthError(err.message || "حدث خطأ غير متوقع.");
-      }
+      setAuthError(err.message || "فشل الاتصال. تأكد من إعدادات Supabase والإنترنت.");
     } finally {
       setAuthLoading(false);
     }
@@ -143,7 +153,6 @@ const App: React.FC = () => {
   return (
     <div className="w-screen h-screen bg-slate-950 text-white overflow-hidden font-sans rtl">
       {view === 'admin' && <AdminPanel onExit={() => {
-        // تنظيف الرابط عند الخروج
         window.history.replaceState({}, '', '/');
         setView('landing');
       }} />}
@@ -163,7 +172,7 @@ const App: React.FC = () => {
               )}
             </div>
           </div>
-          {user && <p className="mt-8 text-indigo-400 font-bold">مرحباً مجدداً، {user.user_metadata?.username || user.email}</p>}
+          {user && <p className="mt-8 text-indigo-400 font-bold italic">مرحباً بك أيها المستكشف، {user.user_metadata?.username || user.email}</p>}
         </div>
       )}
 
