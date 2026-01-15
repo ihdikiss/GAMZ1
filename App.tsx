@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import GameComponent from './components/GameComponent';
 import AdminPanel from './components/AdminPanel';
@@ -54,7 +55,7 @@ const App: React.FC = () => {
         setDbQuestions(fallbacks);
       }
     } catch (e) {
-      console.warn("Using fallback questions");
+      console.warn("Using fallback questions - check connection settings");
     }
   }, []);
 
@@ -69,10 +70,14 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const initSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        setUser(session.user);
-        setUsername(session.user.user_metadata.username || session.user.email?.split('@')[0]);
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          setUser(session.user);
+          setUsername(session.user.user_metadata.username || session.user.email?.split('@')[0]);
+        }
+      } catch (e) {
+        console.error("Auth init failed", e);
       }
       
       const params = new URLSearchParams(window.location.search);
@@ -119,8 +124,8 @@ const App: React.FC = () => {
       }
     } catch (err: any) {
       console.error("Auth error:", err);
-      if (err.message.includes("Invalid login credentials")) {
-        setAuthError("الإيميل أو كلمة المرور غير صحيحة.");
+      if (err.message.includes("Invalid login credentials") || err.message.includes("Failed to fetch")) {
+        setAuthError("خطأ في البيانات أو في الاتصال بقاعدة البيانات. تأكد من تفعيل VPN أو إعدادات السيرفر.");
       } else {
         setAuthError(err.message || "حدث خطأ غير متوقع.");
       }
@@ -178,18 +183,18 @@ const App: React.FC = () => {
 
       {(view === 'login' || view === 'register') && (
         <div className="flex items-center justify-center h-full p-6">
-           <div className="bg-slate-900 p-10 rounded-[40px] w-full max-w-md border border-white/5 text-center relative">
-              <button onClick={() => setView('landing')} className="absolute top-6 right-6 text-slate-500">✕</button>
-              <h2 className="text-3xl font-black mb-6">{view === 'login' ? 'تسجيل دخول' : 'إنشاء حساب'}</h2>
-              {authError && <div className="mb-4 p-3 bg-red-500/20 text-red-400 rounded-xl text-sm">{authError}</div>}
+           <div className="bg-slate-900 p-10 rounded-[40px] w-full max-w-md border border-white/5 text-center relative shadow-2xl">
+              <button onClick={() => setView('landing')} className="absolute top-6 right-6 text-slate-500 hover:text-white transition-colors">✕</button>
+              <h2 className="text-3xl font-black mb-6 text-indigo-400">{view === 'login' ? 'تسجيل دخول' : 'إنشاء حساب'}</h2>
+              {authError && <div className="mb-4 p-4 bg-red-500/10 border border-red-500/20 text-red-400 rounded-2xl text-xs leading-relaxed">{authError}</div>}
               <form onSubmit={(e) => handleAuth(e, view === 'login' ? 'login' : 'reg')} className="space-y-4">
-                 {view === 'register' && <input type="text" placeholder="اسم المستخدم" className="w-full p-4 bg-slate-800 rounded-xl outline-none focus:ring-2 ring-indigo-500" value={username} onChange={e => setUsername(e.target.value)} required />}
-                 <input type="email" placeholder="البريد الإلكتروني" className="w-full p-4 bg-slate-800 rounded-xl outline-none focus:ring-2 ring-indigo-500" value={email} onChange={e => setEmail(e.target.value)} required />
-                 <input type="password" placeholder="كلمة المرور" className="w-full p-4 bg-slate-800 rounded-xl outline-none focus:ring-2 ring-indigo-500" value={password} onChange={e => setPassword(e.target.value)} required />
-                 <button disabled={authLoading} className="w-full py-4 bg-indigo-600 rounded-xl font-bold text-lg hover:bg-indigo-500 transition-all disabled:opacity-50">
+                 {view === 'register' && <input type="text" placeholder="اسم المستخدم" className="w-full p-4 bg-slate-800 rounded-xl outline-none focus:ring-2 ring-indigo-500 text-center font-bold border border-white/5" value={username} onChange={e => setUsername(e.target.value)} required />}
+                 <input type="email" placeholder="البريد الإلكتروني" className="w-full p-4 bg-slate-800 rounded-xl outline-none focus:ring-2 ring-indigo-500 text-center font-bold border border-white/5" value={email} onChange={e => setEmail(e.target.value)} required />
+                 <input type="password" placeholder="كلمة المرور" className="w-full p-4 bg-slate-800 rounded-xl outline-none focus:ring-2 ring-indigo-500 text-center font-bold border border-white/5" value={password} onChange={e => setPassword(e.target.value)} required />
+                 <button disabled={authLoading} className="w-full py-4 bg-indigo-600 rounded-2xl font-black text-lg hover:bg-indigo-500 transition-all disabled:opacity-50 shadow-lg shadow-indigo-500/20">
                    {authLoading ? 'جاري التحقق...' : (view === 'login' ? 'دخول' : 'تسجيل')}
                  </button>
-                 <button type="button" onClick={() => { setAuthError(''); setView(view === 'login' ? 'register' : 'login'); }} className="text-sm text-indigo-400 hover:underline">
+                 <button type="button" onClick={() => { setAuthError(''); setView(view === 'login' ? 'register' : 'login'); }} className="text-xs text-indigo-400 hover:underline block mx-auto mt-4">
                     {view === 'login' ? 'ليس لديك حساب؟ اشترك' : 'لديك حساب؟ سجل دخول'}
                  </button>
               </form>
@@ -199,19 +204,19 @@ const App: React.FC = () => {
 
       {view === 'leaderboard' && (
         <div className="flex items-center justify-center h-full p-6">
-          <div className="w-full max-w-xl bg-slate-900 p-10 rounded-[40px] border border-white/10 text-center relative">
+          <div className="w-full max-w-xl bg-slate-900 p-10 rounded-[40px] border border-white/10 text-center relative shadow-2xl">
             <button onClick={() => setView('landing')} className="absolute top-6 right-6 text-slate-500">✕</button>
-            <h2 className="text-3xl font-black mb-8 italic">لوحة الشرف</h2>
-            <div className="space-y-3 max-h-80 overflow-y-auto pr-2">
+            <h2 className="text-3xl font-black mb-8 italic text-indigo-400">لوحة الشرف</h2>
+            <div className="space-y-3 max-h-80 overflow-y-auto pr-2 custom-scrollbar">
               {leaderboard.map((e, i) => (
-                <div key={i} className="flex justify-between items-center p-4 bg-slate-800/50 rounded-2xl border border-white/5">
-                   <span className="font-bold text-indigo-400">{e.score}</span>
-                   <span className="font-bold">{e.name}</span>
+                <div key={i} className="flex justify-between items-center p-5 bg-slate-800/50 rounded-2xl border border-white/5">
+                   <span className="font-black text-2xl text-indigo-400">{e.score}</span>
+                   <span className="font-bold text-lg">{e.name}</span>
                 </div>
               ))}
-              {leaderboard.length === 0 && <p className="opacity-30">لا يوجد نتائج بعد</p>}
+              {leaderboard.length === 0 && <p className="opacity-30 italic">لا يوجد نتائج بعد في هذه المجرة</p>}
             </div>
-            <button onClick={() => setView('landing')} className="mt-8 w-full py-4 bg-white text-black rounded-xl font-bold">العودة</button>
+            <button onClick={() => setView('landing')} className="mt-8 w-full py-4 bg-white text-black rounded-2xl font-black text-xl hover:bg-slate-200 transition-all">العودة</button>
           </div>
         </div>
       )}
