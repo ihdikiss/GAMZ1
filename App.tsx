@@ -1,11 +1,11 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import GameComponent from './components/GameComponent';
 import { GAME_LEVELS as FALLBACK_LEVELS } from './game/constants';
 import { supabase } from './supabase';
 
+// Interfaces مبسطة لتجنب أخطاء البناء
 interface LeaderboardEntry { name: string; score: number; }
-
 interface QuestionData {
   id?: string;
   text: string;
@@ -15,7 +15,6 @@ interface QuestionData {
   room4: string; 
   correct_index: number;
 }
-
 interface Profile {
   id: string;
   email: string;
@@ -52,30 +51,12 @@ const App: React.FC = () => {
   const [isSecretAdmin, setIsSecretAdmin] = useState(false);
   const [adminInputKey, setAdminInputKey] = useState('');
 
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('access') === 'portal') setView('admin');
-
-    const checkUser = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        setUser(session.user);
-        setUsername(session.user.user_metadata.username || session.user.email?.split('@')[0]);
-      }
-    };
-    checkUser();
-    loadLeaderboard();
-    fetchQuestions();
-  }, []);
-
-  const fetchQuestions = async () => {
+  const fetchQuestions = useCallback(async () => {
     try {
       const { data, error } = await supabase.from('questions').select('*').order('created_at', { ascending: true });
-      if (error) throw error;
-      
-      if (data && data.length > 0) {
-        setDbQuestions(data as QuestionData[]);
-        setAdminQuestions(data as QuestionData[]);
+      if (!error && data && data.length > 0) {
+        setDbQuestions(data as any[]);
+        setAdminQuestions(data as any[]);
       } else {
         const fallbacks: QuestionData[] = FALLBACK_LEVELS.map(q => ({
           text: q.question,
@@ -89,23 +70,50 @@ const App: React.FC = () => {
         setAdminQuestions(fallbacks);
       }
     } catch (e) {
-      console.error("Error fetching questions:", e);
+      console.error("Fetch questions failed", e);
     }
-  };
+  }, []);
 
-  const fetchAdminUsers = async () => {
+  const loadLeaderboard = useCallback(async () => {
+    try {
+      const { data } = await supabase.from('leaderboard').select('name, score').order('score', { ascending: false }).limit(10);
+      if (data) setLeaderboard(data as LeaderboardEntry[]);
+    } catch (e) {
+      console.error("Leaderboard error", e);
+    }
+  }, []);
+
+  const fetchAdminUsers = useCallback(async () => {
     try {
       const { data, error } = await supabase.from('profiles').select('id, email, username');
       if (error) throw error;
       if (data) setAdminUsers(data as Profile[]);
     } catch (err) {
-      console.error("Error fetching users:", err);
+      console.error("Admin fetch users error", err);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    if (isSecretAdmin) fetchAdminUsers();
-  }, [isSecretAdmin]);
+    const checkUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        setUser(session.user);
+        setUsername(session.user.user_metadata.username || session.user.email?.split('@')[0]);
+      }
+    };
+    checkUser();
+    loadLeaderboard();
+    fetchQuestions();
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('access') === 'portal') setView('admin');
+  }, [fetchQuestions, loadLeaderboard]);
+
+  useEffect(() => {
+    if (isSecretAdmin) {
+      fetchAdminUsers();
+    }
+  }, [isSecretAdmin, fetchAdminUsers]);
 
   const handleAuth = async (e: React.FormEvent, mode: 'login' | 'reg') => {
     e.preventDefault();
@@ -114,11 +122,7 @@ const App: React.FC = () => {
     try {
       let result;
       if (mode === 'reg') {
-        result = await supabase.auth.signUp({ 
-          email, 
-          password, 
-          options: { data: { username } } 
-        });
+        result = await supabase.auth.signUp({ email, password, options: { data: { username } } });
         if (result.data.user) {
           await supabase.from('profiles').insert([{ id: result.data.user.id, email, username }]);
           await supabase.from('leaderboard').insert([{ name: username, score: 0 }]);
@@ -147,7 +151,7 @@ const App: React.FC = () => {
     try {
       for (const q of adminQuestions) {
         if (q.id) {
-          const { error } = await supabase.from('questions').update({
+          await supabase.from('questions').update({
             text: q.text,
             room1: q.room1,
             room2: q.room2,
@@ -155,25 +159,14 @@ const App: React.FC = () => {
             room4: q.room4,
             correct_index: q.correct_index
           }).eq('id', q.id);
-          if (error) throw error;
         }
       }
-      alert('✅ تم تحديث الأسئلة بنجاح!');
+      alert('✅ تم التحديث بنجاح');
       fetchQuestions();
     } catch (err: any) {
-      alert('❌ خطأ في الحفظ: ' + err.message);
+      alert('❌ فشل الحفظ: ' + err.message);
     } finally {
       setIsSaving(false);
-    }
-  };
-
-  const loadLeaderboard = async () => {
-    try {
-      const { data, error } = await supabase.from('leaderboard').select('name, score').order('score', { ascending: false }).limit(10);
-      if (error) throw error;
-      if (data) setLeaderboard(data as LeaderboardEntry[]);
-    } catch (e) {
-      console.error("Error loading leaderboard:", e);
     }
   };
 
@@ -205,9 +198,9 @@ const App: React.FC = () => {
 
   return (
     <div className="w-screen h-screen bg-slate-950 text-white overflow-hidden font-sans rtl">
-      {/* Admin View */}
+      {/* Admin Panel */}
       {view === 'admin' && (
-        <div className="absolute inset-0 z-[60] bg-slate-900 overflow-hidden flex flex-col md:flex-row">
+        <div className="absolute inset-0 z-[60] bg-slate-900 flex flex-col md:flex-row overflow-hidden">
           {!isSecretAdmin ? (
             <div className="flex flex-col items-center justify-center w-full h-full p-6">
               <div className="bg-slate-800 p-12 rounded-[50px] w-full max-w-md shadow-2xl text-center border border-white/5">
@@ -220,7 +213,7 @@ const App: React.FC = () => {
                 />
                 <button 
                   onClick={() => { if(adminInputKey === ADMIN_MASTER_KEY) setIsSecretAdmin(true); else alert('مفتاح خاطئ'); }}
-                  className="w-full py-6 bg-indigo-600 rounded-3xl font-black text-xl shadow-xl hover:bg-indigo-500"
+                  className="w-full py-6 bg-indigo-600 rounded-3xl font-black text-xl hover:bg-indigo-500"
                 >
                   فتح لوحة التحكم
                 </button>
@@ -229,43 +222,43 @@ const App: React.FC = () => {
             </div>
           ) : (
             <>
-              <div className="w-full md:w-[320px] bg-slate-950 border-l border-white/10 flex flex-col h-full">
+              <div className="w-full md:w-[320px] bg-slate-950 border-l border-white/10 flex flex-col h-full overflow-y-auto">
                 <div className="p-8 border-b border-white/5 bg-slate-900/50">
-                  <h3 className="text-xl font-black italic text-indigo-400">USERS LIST</h3>
+                  <h3 className="text-xl font-black italic text-indigo-400">USERS</h3>
                 </div>
-                <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                <div className="p-4 space-y-3">
                   {adminUsers.map(u => (
                     <div key={u.id} className="p-5 rounded-[2rem] border bg-slate-900/80 border-white/5">
                       <span className="font-black text-sm block truncate">{u.email}</span>
                       <span className="text-[9px] opacity-40 uppercase">{u.username || 'User'}</span>
                     </div>
                   ))}
+                  {adminUsers.length === 0 && <p className="text-center opacity-30 p-10 italic">لا يوجد مستخدمين بعد</p>}
                 </div>
-                <div className="p-6 bg-slate-900 border-t border-white/5">
+                <div className="mt-auto p-6 bg-slate-900 border-t border-white/5">
                   <button onClick={() => setView('landing')} className="w-full py-4 bg-red-500/10 text-red-500 rounded-2xl font-black text-[10px] uppercase">خروج</button>
                 </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto bg-slate-900">
-                <div className="p-6 md:p-12 max-w-4xl mx-auto space-y-10">
-                  <div className="flex flex-col md:flex-row justify-between items-center gap-6 bg-slate-800/50 p-8 rounded-[40px] border border-white/5">
-                    <h2 className="text-3xl font-black italic">MISSION EDITOR</h2>
+              <div className="flex-1 overflow-y-auto bg-slate-900 p-6 md:p-12">
+                <div className="max-w-4xl mx-auto space-y-10">
+                  <div className="flex justify-between items-center bg-slate-800/50 p-8 rounded-[40px] border border-white/5">
+                    <h2 className="text-3xl font-black italic">EDITOR</h2>
                     <button 
                       onClick={handleSaveAllQuestions}
                       disabled={isSaving}
-                      className="px-12 py-5 bg-indigo-600 text-white rounded-[2rem] font-black text-xl disabled:opacity-50"
+                      className="px-10 py-4 bg-indigo-600 rounded-2xl font-black disabled:opacity-50"
                     >
-                      {isSaving ? 'جاري الحفظ...' : 'حفظ التعديلات ✅'}
+                      {isSaving ? 'حفظ...' : 'حفظ الكل ✅'}
                     </button>
                   </div>
-
                   <div className="space-y-6">
                     {adminQuestions.map((q, idx) => (
                       <div key={idx} className="bg-slate-800/40 p-8 rounded-[40px] border border-white/5">
-                        <h4 className="font-black mb-4 uppercase">Mission Question {idx+1}</h4>
+                        <h4 className="font-black mb-4 uppercase">Q {idx+1}</h4>
                         <div className="space-y-4">
                           <textarea 
-                            className="w-full p-6 bg-slate-950 rounded-3xl border border-white/5 min-h-[100px]"
+                            className="w-full p-6 bg-slate-950 rounded-3xl border border-white/5 min-h-[100px] outline-none"
                             value={q.text}
                             onChange={(e) => handleAdminQuestionChange(idx, 'text', e.target.value)}
                           />
@@ -273,14 +266,14 @@ const App: React.FC = () => {
                             {[1, 2, 3, 4].map(num => (
                               <input 
                                 key={num}
-                                className="p-4 bg-slate-950 rounded-2xl text-xs border border-white/5" 
+                                className="p-4 bg-slate-950 rounded-2xl text-xs border border-white/5 outline-none" 
                                 value={(q as any)[`room${num}`]} 
                                 onChange={(e) => handleAdminQuestionChange(idx, `room${num}` as any, e.target.value)} 
                               />
                             ))}
                           </div>
                           <div className="flex items-center justify-between p-4 bg-indigo-600/5 rounded-2xl">
-                            <span className="text-xs font-black">الجواب الصحيح:</span>
+                            <span className="text-xs font-black">الجواب:</span>
                             <select 
                               className="bg-slate-950 p-3 rounded-xl text-indigo-400 outline-none"
                               value={q.correct_index}
@@ -303,12 +296,12 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Landing */}
+      {/* Views Logic */}
       {view === 'landing' && (
         <div className="flex flex-col items-center justify-center h-full text-center p-6">
-          <h1 className="text-8xl md:text-[10rem] font-black mb-12 italic tracking-tighter text-indigo-500">SPACE MAZE</h1>
+          <h1 className="text-8xl md:text-[10rem] font-black mb-12 italic text-indigo-500 select-none">SPACE MAZE</h1>
           <div className="flex flex-col gap-4 w-full max-w-md">
-            <button onClick={() => setView(user ? 'game' : 'register')} className="py-6 bg-white text-black rounded-[2.5rem] font-black text-2xl active:scale-95">مهمة عادية 🚀</button>
+            <button onClick={() => setView(user ? 'game' : 'register')} className="py-6 bg-white text-black rounded-[2.5rem] font-black text-2xl active:scale-95 transition-transform">مهمة عادية 🚀</button>
             <button onClick={() => { if(user) window.open(WHATSAPP_LINK, '_blank'); else setView('register'); }} className="py-5 bg-indigo-700 text-white rounded-[2.5rem] font-black text-xl">مغامرة VIP ✨</button>
             <div className="grid grid-cols-2 gap-4">
               <button onClick={() => setView('leaderboard')} className="py-4 bg-slate-900 border border-white/10 rounded-3xl font-black text-[10px] uppercase">لوحة الشرف</button>
@@ -322,12 +315,11 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Game */}
       {view === 'game' && currentQuestion && (
         <div className="w-full h-full relative">
           <div className="absolute top-8 left-1/2 -translate-x-1/2 z-40 w-full max-w-2xl px-6">
             <div className="bg-slate-900/80 backdrop-blur-2xl border border-white/10 p-6 rounded-[3rem] text-center">
-              <span className="text-[10px] font-black text-indigo-400 uppercase block">Mission {levelIndex + 1} / {dbQuestions.length}</span>
+              <span className="text-[10px] font-black text-indigo-400 uppercase">Mission {levelIndex + 1} / {dbQuestions.length}</span>
               <h3 className="text-xl md:text-2xl font-bold">{currentQuestion.text}</h3>
             </div>
           </div>
@@ -350,44 +342,43 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Auth */}
       {(view === 'login' || view === 'register') && (
         <div className="flex items-center justify-center h-full p-6">
            <div className="bg-slate-900/90 backdrop-blur-3xl p-12 rounded-[50px] w-full max-w-md border border-white/5 text-center relative">
-              <button onClick={() => setView('landing')} className="absolute top-8 right-8 text-slate-500 font-bold">✕</button>
-              <h2 className="text-4xl font-black mb-2 italic">{view === 'login' ? 'WELCOME BACK' : 'JOIN THE MISSION'}</h2>
+              <button onClick={() => setView('landing')} className="absolute top-8 right-8 text-slate-500 font-bold hover:text-white">✕</button>
+              <h2 className="text-4xl font-black mb-2 italic">{view === 'login' ? 'WELCOME BACK' : 'JOIN'}</h2>
               {authError && <div className="mb-6 p-4 bg-red-500/10 text-red-400 rounded-2xl text-xs font-bold">{authError}</div>}
               <form onSubmit={(e) => handleAuth(e, view === 'login' ? 'login' : 'reg')} className="space-y-4">
-                 {view === 'register' && <input type="text" placeholder="Username" className="w-full p-5 bg-slate-800/50 rounded-2xl text-center font-bold" value={username} onChange={e => setUsername(e.target.value)} required />}
-                 <input type="email" placeholder="Email" className="w-full p-5 bg-slate-800/50 rounded-2xl text-center font-bold" value={email} onChange={e => setEmail(e.target.value)} required />
-                 <input type="password" placeholder="Password" className="w-full p-5 bg-slate-800/50 rounded-2xl text-center font-bold" value={password} onChange={e => setPassword(e.target.value)} required />
+                 {view === 'register' && <input type="text" placeholder="Username" className="w-full p-5 bg-slate-800/50 rounded-2xl text-center font-bold outline-none" value={username} onChange={e => setUsername(e.target.value)} required />}
+                 <input type="email" placeholder="Email" className="w-full p-5 bg-slate-800/50 rounded-2xl text-center font-bold outline-none" value={email} onChange={e => setEmail(e.target.value)} required />
+                 <input type="password" placeholder="Password" className="w-full p-5 bg-slate-800/50 rounded-2xl text-center font-bold outline-none" value={password} onChange={e => setPassword(e.target.value)} required />
                  <button disabled={authLoading} className="w-full py-5 bg-indigo-600 rounded-3xl font-black text-xl shadow-xl mt-6">
-                   {authLoading ? 'Verifying...' : (view === 'login' ? 'LOGIN' : 'REGISTER')}
+                   {authLoading ? '...' : (view === 'login' ? 'LOGIN' : 'REGISTER')}
                  </button>
                  <button type="button" onClick={() => setView(view === 'login' ? 'register' : 'login')} className="mt-4 text-xs text-indigo-400 hover:underline">
-                    {view === 'login' ? 'ليس لديك حساب؟ اشترك' : 'لديك حساب؟ سجل دخول'}
+                    {view === 'login' ? 'اشترك الآن' : 'سجل دخول'}
                  </button>
               </form>
            </div>
         </div>
       )}
 
-      {/* Leaderboard */}
       {view === 'leaderboard' && (
         <div className="flex items-center justify-center h-full p-6">
-          <div className="w-full max-w-xl bg-slate-900 p-12 rounded-[70px] border border-indigo-500/20 text-center relative">
+          <div className="w-full max-w-xl bg-slate-900 p-12 rounded-[70px] border border-indigo-500/20 text-center relative shadow-2xl">
             <button onClick={() => setView('landing')} className="absolute top-10 right-10 text-slate-500 font-bold">✕</button>
             <h2 className="text-4xl font-black italic mb-12 text-indigo-400">LEADERBOARD</h2>
-            <div className="space-y-3 mb-10 max-h-80 overflow-y-auto">
+            <div className="space-y-3 mb-10 max-h-80 overflow-y-auto custom-scrollbar">
               {leaderboard.map((e, i) => (
                 <div key={i} className="flex justify-between items-center p-6 bg-slate-800/30 rounded-[2rem] border border-white/5">
                    <span className="text-3xl font-black text-indigo-400">{e.score}</span>
                    <div className="text-right">
                      <span className="font-black text-xl block">{e.name}</span>
-                     <span className="text-[10px] text-slate-500">RANK #{i+1}</span>
+                     <span className="text-[10px] text-slate-500 uppercase">RANK #{i+1}</span>
                    </div>
                 </div>
               ))}
+              {leaderboard.length === 0 && <p className="opacity-30 italic">لا يوجد نتائج بعد</p>}
             </div>
             <button onClick={() => setView('landing')} className="w-full py-6 bg-white text-black rounded-full font-black text-2xl">العودة</button>
           </div>
