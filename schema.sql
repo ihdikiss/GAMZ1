@@ -1,15 +1,17 @@
+-- 1. تنظيف قاعدة البيانات (حذف الجداول القديمة للبدء من جديد)
+DROP TABLE IF EXISTS public.leaderboard;
+DROP TABLE IF EXISTS public.questions;
+DROP TABLE IF EXISTS public.profiles;
 
--- 1. إنشاء الجداول الأساسية
--- جدول البروفايلات: لتخزين بيانات المستخدمين بعد التسجيل
-CREATE TABLE IF NOT EXISTS public.profiles (
+-- 2. إنشاء الجداول بالهيكل المحدث
+CREATE TABLE public.profiles (
   id UUID REFERENCES auth.users ON DELETE CASCADE PRIMARY KEY,
   username TEXT,
   email TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
--- جدول الأسئلة: لتخزين مراحل المتاهة
-CREATE TABLE IF NOT EXISTS public.questions (
+CREATE TABLE public.questions (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   text TEXT NOT NULL,
   room1 TEXT NOT NULL,
@@ -20,42 +22,27 @@ CREATE TABLE IF NOT EXISTS public.questions (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
--- جدول لوحة الشرف: لتخزين النقاط
-CREATE TABLE IF NOT EXISTS public.leaderboard (
+CREATE TABLE public.leaderboard (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   name TEXT NOT NULL,
   score INT NOT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
--- 2. تفعيل الحماية (RLS)
+-- 3. تفعيل الحماية RLS (Row Level Security)
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.questions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.leaderboard ENABLE ROW LEVEL SECURITY;
 
--- 3. إعداد سياسات الوصول (Policies)
--- سياسات جدول البروفايلات
-DROP POLICY IF EXISTS "Public profiles are viewable by everyone" ON public.profiles;
-CREATE POLICY "Public profiles are viewable by everyone" ON public.profiles FOR SELECT USING (true);
-DROP POLICY IF EXISTS "Users can insert their own profile" ON public.profiles;
-CREATE POLICY "Users can insert their own profile" ON public.profiles FOR INSERT WITH CHECK (auth.uid() = id);
-DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
-CREATE POLICY "Users can update own profile" ON public.profiles FOR UPDATE USING (auth.uid() = id);
-
--- سياسات جدول الأسئلة (القراءة للجميع، التحكم للمسؤول)
-DROP POLICY IF EXISTS "Questions are viewable by everyone" ON public.questions;
-CREATE POLICY "Questions are viewable by everyone" ON public.questions FOR SELECT USING (true);
-DROP POLICY IF EXISTS "Admin can manage questions" ON public.questions;
-CREATE POLICY "Admin can manage questions" ON public.questions FOR ALL USING (true);
-
--- سياسات لوحة الشرف
-DROP POLICY IF EXISTS "Leaderboard viewable by everyone" ON public.leaderboard;
-CREATE POLICY "Leaderboard viewable by everyone" ON public.leaderboard FOR SELECT USING (true);
-DROP POLICY IF EXISTS "Anyone can add to leaderboard" ON public.leaderboard;
+-- 4. إعداد سياسات الوصول (Policies)
+CREATE POLICY "Public read profiles" ON public.profiles FOR SELECT USING (true);
+CREATE POLICY "Users can insert own profile" ON public.profiles FOR INSERT WITH CHECK (auth.uid() = id);
+CREATE POLICY "Public read questions" ON public.questions FOR SELECT USING (true);
+CREATE POLICY "Admin manage questions" ON public.questions FOR ALL USING (true);
+CREATE POLICY "Public read leaderboard" ON public.leaderboard FOR SELECT USING (true);
 CREATE POLICY "Anyone can add to leaderboard" ON public.leaderboard FOR INSERT WITH CHECK (true);
 
--- 4. إدخال الأسئلة العشرة (تنظيف البيانات القديمة أولاً لضمان عدم التكرار)
-DELETE FROM public.questions;
+-- 5. إدخال الأسئلة العشرة (المحتوى التعليمي)
 INSERT INTO public.questions (text, room1, room2, room3, room4, correct_index) VALUES
 ('متى بدأت المرحلة الأولى من الحرب العالمية الأولى؟', '1914م', '1917م', '1918م', '1919م', 0),
 ('أي طرف حقق انتصارات كبيرة خلال المرحلة الأولى (1914-1917)؟', 'دول الوفاق', 'التحالف الثلاثي', 'الولايات المتحدة', 'عصبة الأمم', 1),
