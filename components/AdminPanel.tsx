@@ -1,94 +1,80 @@
-
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
 
-interface Profile {
+interface UserProfile {
   id: string;
   email: string;
   username: string;
 }
 
 const AdminPanel: React.FC<{ onExit: () => void }> = ({ onExit }) => {
-  const [users, setUsers] = useState<Profile[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [users, setUsers] = useState<UserProfile[]>([]);
+  const [status, setStatus] = useState<'loading' | 'error' | 'ready'>('loading');
+  const [errorMessage, setErrorMessage] = useState('');
 
   useEffect(() => {
-    const fetchUsers = async () => {
+    async function loadUsers() {
       try {
-        setLoading(true);
+        setStatus('loading');
         const { data, error } = await supabase
           .from('profiles')
           .select('id, email, username');
 
         if (error) throw error;
         setUsers(data || []);
+        setStatus('ready');
       } catch (err: any) {
-        console.error("Error fetching users:", err);
-        setError(err.message || "فشل في جلب المستخدمين");
-      } finally {
-        setLoading(false);
+        console.error("Admin fetch error:", err);
+        setErrorMessage(err.message || "فشل الاتصال بقاعدة البيانات");
+        setStatus('error');
       }
-    };
-
-    fetchUsers();
+    }
+    loadUsers();
   }, []);
 
   return (
     <div style={{
-      position: 'fixed',
-      top: 0,
-      left: 0,
-      width: '100%',
-      height: '100%',
-      backgroundColor: '#0f172a',
-      color: 'white',
-      zIndex: 9999,
-      display: 'flex',
-      flexDirection: 'column',
-      padding: '20px',
-      fontFamily: 'sans-serif'
+      position: 'fixed', inset: 0, backgroundColor: '#020617', color: 'white',
+      zIndex: 10000, padding: '20px', fontFamily: 'sans-serif', direction: 'rtl'
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', borderBottom: '1px solid #334155', paddingBottom: '15px' }}>
-        <h1 style={{ fontSize: '24px', fontWeight: 'bold' }}>لوحة التحكم Admin</h1>
-        <button 
-          onClick={onExit}
-          style={{ padding: '8px 16px', backgroundColor: '#ef4444', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer' }}
-        >
-          خروج
-        </button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px', borderBottom: '1px solid #1e293b', paddingBottom: '10px' }}>
+        <h1 style={{ fontSize: '24px', margin: 0 }}>لوحة التحكم (Admin)</h1>
+        <button onClick={onExit} style={{ padding: '8px 20px', backgroundColor: '#ef4444', border: 'none', borderRadius: '5px', color: 'white', cursor: 'pointer' }}>خروج</button>
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', backgroundColor: '#1e293b', borderRadius: '12px', padding: '20px' }}>
-        <h2 style={{ fontSize: '18px', marginBottom: '15px', color: '#818cf8' }}>قائمة المستخدمين المسجلين</h2>
+      <div style={{ backgroundColor: '#0f172a', padding: '20px', borderRadius: '10px' }}>
+        {status === 'loading' && <p>جاري جلب قائمة المستخدمين...</p>}
         
-        {loading ? (
-          <p style={{ textAlign: 'center', opacity: 0.6, marginTop: '40px' }}>جاري جلب المستخدمين...</p>
-        ) : error ? (
-          <p style={{ color: '#f87171', backgroundColor: '#450a0a', padding: '15px', borderRadius: '8px' }}>{error}</p>
-        ) : users.length === 0 ? (
-          <p style={{ opacity: 0.5 }}>لا يوجد مستخدمين حالياً</p>
-        ) : (
-          <ul style={{ listStyle: 'none', padding: 0 }}>
-            {users.map((u) => (
-              <li key={u.id} style={{ 
-                padding: '12px', 
-                borderBottom: '1px solid #334155', 
-                display: 'flex', 
-                flexDirection: 'column',
-                gap: '4px'
-              }}>
-                <span style={{ fontWeight: 'bold' }}>{u.email}</span>
-                <span style={{ fontSize: '12px', opacity: 0.5 }}>الاسم: {u.username || 'غير محدد'}</span>
-              </li>
-            ))}
-          </ul>
+        {status === 'error' && (
+          <div style={{ color: '#f87171' }}>
+            <p>خطأ: {errorMessage}</p>
+            <button onClick={() => window.location.reload()} style={{ marginTop: '10px', color: '#6366f1', background: 'none', border: '1px solid #6366f1', padding: '5px 10px', cursor: 'pointer' }}>إعادة المحاولة</button>
+          </div>
+        )}
+
+        {status === 'ready' && (
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ textAlign: 'right', borderBottom: '1px solid #334155' }}>
+                <th style={{ padding: '10px' }}>الإيميل</th>
+                <th style={{ padding: '10px' }}>اسم المستخدم</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.length === 0 ? (
+                <tr><td colSpan={2} style={{ padding: '20px', textAlign: 'center', opacity: 0.5 }}>لا يوجد مستخدمين مسجلين بعد.</td></tr>
+              ) : (
+                users.map(u => (
+                  <tr key={u.id} style={{ borderBottom: '1px solid #1e293b' }}>
+                    <td style={{ padding: '10px' }}>{u.email}</td>
+                    <td style={{ padding: '10px' }}>{u.username}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         )}
       </div>
-      
-      <p style={{ marginTop: '20px', fontSize: '10px', opacity: 0.3, textAlign: 'center' }}>
-        Production Ready Admin Panel - Space Maze Chase
-      </p>
     </div>
   );
 };
