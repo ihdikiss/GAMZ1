@@ -37,40 +37,59 @@ const App: React.FC = () => {
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
 
-  // تحويل هيكل الأسئلة المخصصة الجديد من DB إلى تنسيق محرك اللعبة
+  /**
+   * تحويل هيكل الأسئلة المخصصة مع تصفية الأسئلة غير المكتملة
+   */
   const formatCustomQuestions = (questions: any[]): QuestionData[] => {
-    return questions.map(q => {
-      const opts = q.options || [];
-      const correctIdx = opts.indexOf(q.correct_answer);
-      return {
-        text: q.question || 'سؤال مفقود',
-        room1: opts[0] || 'أ',
-        room2: opts[1] || 'ب',
-        room3: opts[2] || 'ج',
-        room4: opts[3] || 'د',
-        correct_index: correctIdx !== -1 ? correctIdx : 0
-      };
-    });
+    if (!Array.isArray(questions)) return [];
+    
+    return questions
+      .filter(q => {
+        // نتحقق من وجود السؤال ووجود 4 خيارات غير فارغة ووجود إجابة صحيحة
+        const hasText = q.question && q.question.trim().length > 0;
+        const hasOptions = Array.isArray(q.options) && q.options.length === 4 && q.options.every((opt: string) => opt && opt.trim().length > 0);
+        const hasCorrect = q.correct_answer && q.correct_answer.trim().length > 0;
+        return hasText && hasOptions && hasCorrect;
+      })
+      .map(q => {
+        const opts = q.options;
+        const correctIdx = opts.indexOf(q.correct_answer);
+        return {
+          text: q.question,
+          room1: opts[0],
+          room2: opts[1],
+          room3: opts[2],
+          room4: opts[3],
+          correct_index: correctIdx !== -1 ? correctIdx : 0
+        };
+      });
   };
 
   const loadQuestionsForGame = useCallback(async (profile?: any) => {
-    if (profile?.is_active && Array.isArray(profile?.custom_questions) && profile.custom_questions.length > 0) {
-      setGameQuestions(formatCustomQuestions(profile.custom_questions));
-      return;
+    // الأولوية القصوى: إذا كان المستخدم VIP، نستخدم أسئلته المخصصة فقط
+    if (profile?.is_active) {
+      const formatted = formatCustomQuestions(profile.custom_questions);
+      if (formatted.length > 0) {
+        setGameQuestions(formatted);
+        console.log(`VIP Mode: Loaded ${formatted.length} custom questions.`);
+        return;
+      }
+      // إذا كان VIP ولكن لا توجد أسئلة صالحة، يمكننا تحميل الأسئلة العامة أو إظهار تنبيه
+      // هنا سنستمر في تحميل الأسئلة العامة كخيار أخير لتجنب كسر اللعبة
     }
 
+    // الخيار الثاني: الأسئلة العامة من قاعدة البيانات
     if (isConfigured()) {
       try {
         const { data } = await supabase.from('questions').select('*').order('created_at', { ascending: true });
         if (data && data.length > 0) {
-          // إذا كان لدينا جدول أسئلة عامة (لغير VIP)
           setGameQuestions(data as any[]);
           return;
         }
       } catch (e) {}
     }
 
-    // أسئلة افتراضية إذا لم يتوفر اتصال أو محتوى مخصص
+    // الخيار الأخير: الأسئلة الافتراضية
     const fallbacks: QuestionData[] = FALLBACK_LEVELS.map(q => ({
       text: q.question,
       room1: q.rooms[0].label,
@@ -117,10 +136,13 @@ const App: React.FC = () => {
         setScore(prev => prev + 100);
         setLevelIndex(prev => {
           const next = prev + 1;
-          const maxAllowed = gameQuestions.length > 0 ? gameQuestions.length : 3;
-          if (next >= maxAllowed) {
+          // الفوز يعتمد على إتمام جميع الأسئلة المحملة حالياً
+          const totalLevels = gameQuestions.length;
+          
+          if (next >= totalLevels) {
             setGameOver(true);
             setIsVictory(true);
+            return prev; // البقاء عند آخر مستوى
           }
           return next;
         });
@@ -147,7 +169,6 @@ const App: React.FC = () => {
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
-        // سيتم تحديث الحالة تلقائياً عبر useEffect/getSession
         window.location.reload(); 
       }
     } catch (err: any) {
@@ -177,7 +198,7 @@ const App: React.FC = () => {
                  else if (userProfile?.is_active) { setLives(3); setLevelIndex(0); setScore(0); setGameOver(false); setView('game'); }
                  else window.open(WHATSAPP_LINK, '_blank');
               }} 
-              className={`w-full py-5 rounded-[2.5rem] font-black text-xl transition-all flex items-center justify-center gap-3 ${userProfile?.is_active ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-indigo-700 hover:bg-indigo-600'}`}
+              className={`w-full py-5 rounded-[2.5rem] font-black text-xl transition-all flex items-center justify-center gap-3 ${userProfile?.is_active ? 'bg-emerald-600 hover:bg-emerald-500 shadow-lg shadow-emerald-500/20' : 'bg-indigo-700 hover:bg-indigo-600'}`}
             >
               {userProfile?.is_active ? 'ابدأ مغامرة VIP ✨' : 'تفعيل مغامرة VIP ✨'}
             </button>
@@ -222,7 +243,7 @@ const App: React.FC = () => {
                <div className="text-center p-12 bg-slate-900 rounded-[3rem] border border-white/10 max-w-sm w-full animate-in zoom-in duration-300">
                   <div className="text-6xl mb-6">{isVictory ? '👑' : '💥'}</div>
                   <h2 className="text-4xl font-black mb-6">{isVictory ? 'أتممت المهمة!' : 'تحطم المكوك!'}</h2>
-                  <p className="text-slate-400 mb-8 font-bold">نقاطك النهائية: {score}</p>
+                  <p className="text-slate-400 mb-8 font-bold">لقد أجبت على جميع الأسئلة بنجاح. نقاطك: {score}</p>
                   <button onClick={() => { setView('landing'); setGameOver(false); }} className="w-full py-5 bg-white text-black rounded-[2rem] font-black text-xl hover:bg-slate-200 transition-all">العودة للرئيسية</button>
                </div>
             </div>
