@@ -38,14 +38,13 @@ const App: React.FC = () => {
   const [authError, setAuthError] = useState('');
 
   /**
-   * تحويل هيكل الأسئلة المخصصة مع تصفية الأسئلة غير المكتملة
+   * تحويل وتصفية الأسئلة المخصصة
    */
   const formatCustomQuestions = (questions: any[]): QuestionData[] => {
     if (!Array.isArray(questions)) return [];
     
     return questions
       .filter(q => {
-        // نتحقق من وجود السؤال ووجود 4 خيارات غير فارغة ووجود إجابة صحيحة
         const hasText = q.question && q.question.trim().length > 0;
         const hasOptions = Array.isArray(q.options) && q.options.length === 4 && q.options.every((opt: string) => opt && opt.trim().length > 0);
         const hasCorrect = q.correct_answer && q.correct_answer.trim().length > 0;
@@ -66,19 +65,17 @@ const App: React.FC = () => {
   };
 
   const loadQuestionsForGame = useCallback(async (profile?: any) => {
-    // الأولوية القصوى: إذا كان المستخدم VIP، نستخدم أسئلته المخصصة فقط
-    if (profile?.is_active) {
+    // 1. الأولوية المطلقة: بمجرد وجود أي سؤال مخصص صالح، نعتمد عليه فقط
+    if (profile?.custom_questions) {
       const formatted = formatCustomQuestions(profile.custom_questions);
       if (formatted.length > 0) {
         setGameQuestions(formatted);
-        console.log(`VIP Mode: Loaded ${formatted.length} custom questions.`);
-        return;
+        console.log(`[Priority] Custom questions loaded: ${formatted.length}`);
+        return; 
       }
-      // إذا كان VIP ولكن لا توجد أسئلة صالحة، يمكننا تحميل الأسئلة العامة أو إظهار تنبيه
-      // هنا سنستمر في تحميل الأسئلة العامة كخيار أخير لتجنب كسر اللعبة
     }
 
-    // الخيار الثاني: الأسئلة العامة من قاعدة البيانات
+    // 2. الرجوع للأسئلة العامة من قاعدة البيانات
     if (isConfigured()) {
       try {
         const { data } = await supabase.from('questions').select('*').order('created_at', { ascending: true });
@@ -89,7 +86,7 @@ const App: React.FC = () => {
       } catch (e) {}
     }
 
-    // الخيار الأخير: الأسئلة الافتراضية
+    // 3. الأسئلة الافتراضية
     const fallbacks: QuestionData[] = FALLBACK_LEVELS.map(q => ({
       text: q.question,
       room1: q.rooms[0].label,
@@ -136,13 +133,10 @@ const App: React.FC = () => {
         setScore(prev => prev + 100);
         setLevelIndex(prev => {
           const next = prev + 1;
-          // الفوز يعتمد على إتمام جميع الأسئلة المحملة حالياً
-          const totalLevels = gameQuestions.length;
-          
-          if (next >= totalLevels) {
+          if (next >= gameQuestions.length) {
             setGameOver(true);
             setIsVictory(true);
-            return prev; // البقاء عند آخر مستوى
+            return prev;
           }
           return next;
         });
@@ -164,7 +158,7 @@ const App: React.FC = () => {
         if (data.user) {
           await supabase.from('profiles').upsert([{ id: data.user.id, email, username, is_active: false, custom_questions: [] }]);
           setView('landing');
-          alert("تم التسجيل بنجاح! يمكنك الآن تسجيل الدخول.");
+          alert("تم التسجيل بنجاح!");
         }
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
@@ -177,6 +171,11 @@ const App: React.FC = () => {
       setAuthLoading(false);
     }
   };
+
+  // التحقق مما إذا كان المستخدم يملك أسئلة مخصصة جاهزة للعب
+  const hasValidCustomQuestions = gameQuestions.length > 0 && 
+    userProfile?.custom_questions && 
+    formatCustomQuestions(userProfile.custom_questions).length > 0;
 
   return (
     <div className="w-screen h-screen bg-slate-950 text-white overflow-hidden font-sans rtl">
@@ -195,12 +194,12 @@ const App: React.FC = () => {
             <button 
               onClick={() => {
                  if (!user) setView('register');
-                 else if (userProfile?.is_active) { setLives(3); setLevelIndex(0); setScore(0); setGameOver(false); setView('game'); }
+                 else if (hasValidCustomQuestions) { setLives(3); setLevelIndex(0); setScore(0); setGameOver(false); setView('game'); }
                  else window.open(WHATSAPP_LINK, '_blank');
               }} 
-              className={`w-full py-5 rounded-[2.5rem] font-black text-xl transition-all flex items-center justify-center gap-3 ${userProfile?.is_active ? 'bg-emerald-600 hover:bg-emerald-500 shadow-lg shadow-emerald-500/20' : 'bg-indigo-700 hover:bg-indigo-600'}`}
+              className={`w-full py-5 rounded-[2.5rem] font-black text-xl transition-all flex items-center justify-center gap-3 ${hasValidCustomQuestions ? 'bg-emerald-600 hover:bg-emerald-500 shadow-lg shadow-emerald-500/20' : 'bg-indigo-700 hover:bg-indigo-600'}`}
             >
-              {userProfile?.is_active ? 'ابدأ مغامرة VIP ✨' : 'تفعيل مغامرة VIP ✨'}
+              {hasValidCustomQuestions ? 'ابدأ مهمتك الخاصة ✨' : 'تفعيل مغامرة VIP ✨'}
             </button>
 
             <div className="grid grid-cols-2 gap-4">
@@ -243,7 +242,7 @@ const App: React.FC = () => {
                <div className="text-center p-12 bg-slate-900 rounded-[3rem] border border-white/10 max-w-sm w-full animate-in zoom-in duration-300">
                   <div className="text-6xl mb-6">{isVictory ? '👑' : '💥'}</div>
                   <h2 className="text-4xl font-black mb-6">{isVictory ? 'أتممت المهمة!' : 'تحطم المكوك!'}</h2>
-                  <p className="text-slate-400 mb-8 font-bold">لقد أجبت على جميع الأسئلة بنجاح. نقاطك: {score}</p>
+                  <p className="text-slate-400 mb-8 font-bold">لقد أنهيت التحدي. نقاطك: {score}</p>
                   <button onClick={() => { setView('landing'); setGameOver(false); }} className="w-full py-5 bg-white text-black rounded-[2rem] font-black text-xl hover:bg-slate-200 transition-all">العودة للرئيسية</button>
                </div>
             </div>
@@ -251,19 +250,18 @@ const App: React.FC = () => {
         </div>
       )}
       
+      {/* باقي الواجهات تظل كما هي */}
       {view === 'login' && (
         <div className="flex items-center justify-center h-full p-6 animate-in fade-in duration-500">
            <div className="bg-slate-900 p-10 rounded-[40px] w-full max-w-md border border-white/5 text-center relative shadow-2xl">
               <button onClick={() => setView('landing')} className="absolute top-6 right-6 text-slate-500 hover:text-white transition-colors">✕</button>
               <h2 className="text-3xl font-black mb-6 text-indigo-400 italic">تسجيل دخول</h2>
-              {authError && <div className="mb-4 p-4 bg-red-500/10 border border-red-500/20 text-red-400 rounded-2xl text-xs font-bold">{authError}</div>}
               <form onSubmit={(e) => handleAuth(e, 'login')} className="space-y-4">
-                 <input type="email" placeholder="البريد الإلكتروني" className="w-full p-5 bg-slate-800 rounded-2xl outline-none focus:ring-2 ring-indigo-500 text-center font-bold border border-white/5" value={email} onChange={e => setEmail(e.target.value)} required />
-                 <input type="password" placeholder="كلمة المرور" className="w-full p-5 bg-slate-800 rounded-2xl outline-none focus:ring-2 ring-indigo-500 text-center font-bold border border-white/5" value={password} onChange={e => setPassword(e.target.value)} required />
-                 <button disabled={authLoading} className="w-full py-5 bg-indigo-600 rounded-2xl font-black text-xl hover:bg-indigo-500 transition-all shadow-xl shadow-indigo-600/20">
+                 <input type="email" placeholder="البريد الإلكتروني" className="w-full p-5 bg-slate-800 rounded-2xl outline-none text-center font-bold border border-white/5" value={email} onChange={e => setEmail(e.target.value)} required />
+                 <input type="password" placeholder="كلمة المرور" className="w-full p-5 bg-slate-800 rounded-2xl outline-none text-center font-bold border border-white/5" value={password} onChange={e => setPassword(e.target.value)} required />
+                 <button disabled={authLoading} className="w-full py-5 bg-indigo-600 rounded-2xl font-black text-xl hover:bg-indigo-500 transition-all">
                    {authLoading ? 'جاري التحقق...' : 'دخول'}
                  </button>
-                 <button type="button" onClick={() => { setAuthError(''); setView('register'); }} className="text-xs text-indigo-400 hover:underline block mx-auto mt-6">ليس لديك حساب؟ اشترك مجاناً</button>
               </form>
            </div>
         </div>
@@ -274,15 +272,13 @@ const App: React.FC = () => {
            <div className="bg-slate-900 p-10 rounded-[40px] w-full max-w-md border border-white/5 text-center relative shadow-2xl">
               <button onClick={() => setView('landing')} className="absolute top-6 right-6 text-slate-500 hover:text-white transition-colors">✕</button>
               <h2 className="text-3xl font-black mb-6 text-indigo-400 italic">إنشاء حساب جديد</h2>
-              {authError && <div className="mb-4 p-4 bg-red-500/10 border border-red-500/20 text-red-400 rounded-2xl text-xs font-bold">{authError}</div>}
               <form onSubmit={(e) => handleAuth(e, 'reg')} className="space-y-4">
-                 <input type="text" placeholder="اسم المستخدم (بالعربية أو الإنجليزية)" className="w-full p-5 bg-slate-800 rounded-2xl outline-none focus:ring-2 ring-indigo-500 text-center font-bold border border-white/5" value={username} onChange={e => setUsername(e.target.value)} required />
-                 <input type="email" placeholder="البريد الإلكتروني" className="w-full p-5 bg-slate-800 rounded-2xl outline-none focus:ring-2 ring-indigo-500 text-center font-bold border border-white/5" value={email} onChange={e => setEmail(e.target.value)} required />
-                 <input type="password" placeholder="كلمة المرور (6 أحرف على الأقل)" className="w-full p-5 bg-slate-800 rounded-2xl outline-none focus:ring-2 ring-indigo-500 text-center font-bold border border-white/5" value={password} onChange={e => setPassword(e.target.value)} required />
-                 <button disabled={authLoading} className="w-full py-5 bg-indigo-600 rounded-2xl font-black text-xl hover:bg-indigo-500 transition-all shadow-xl shadow-indigo-600/20">
-                   {authLoading ? 'جاري معالجة الطلب...' : 'اشترك الآن'}
+                 <input type="text" placeholder="اسم المستخدم" className="w-full p-5 bg-slate-800 rounded-2xl outline-none text-center font-bold border border-white/5" value={username} onChange={e => setUsername(e.target.value)} required />
+                 <input type="email" placeholder="البريد الإلكتروني" className="w-full p-5 bg-slate-800 rounded-2xl outline-none text-center font-bold border border-white/5" value={email} onChange={e => setEmail(e.target.value)} required />
+                 <input type="password" placeholder="كلمة المرور" className="w-full p-5 bg-slate-800 rounded-2xl outline-none text-center font-bold border border-white/5" value={password} onChange={e => setPassword(e.target.value)} required />
+                 <button disabled={authLoading} className="w-full py-5 bg-indigo-600 rounded-2xl font-black text-xl hover:bg-indigo-500 transition-all">
+                   {authLoading ? 'جاري المعالجة...' : 'اشترك الآن'}
                  </button>
-                 <button type="button" onClick={() => { setAuthError(''); setView('login'); }} className="text-xs text-indigo-400 hover:underline block mx-auto mt-6">لديك حساب بالفعل؟ سجل دخول</button>
               </form>
            </div>
         </div>
