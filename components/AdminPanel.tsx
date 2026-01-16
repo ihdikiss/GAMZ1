@@ -34,10 +34,14 @@ const AdminPanel: React.FC<{ onExit: () => void }> = ({ onExit }) => {
   };
 
   const fetchUsers = async () => {
-    if (!isConfigured()) {
-      setFetchError("لم يتم العثور على إعدادات Supabase (URL/Key).");
+    const configured = isConfigured();
+    console.log("Supabase Configuration Status:", configured);
+    
+    if (!configured) {
+      setFetchError("لم يتم العثور على إعدادات Supabase (URL/Key). يرجى التأكد من تحديث ملف supabase.ts");
       return;
     }
+
     setLoading(true);
     setFetchError(null);
     try {
@@ -46,11 +50,19 @@ const AdminPanel: React.FC<{ onExit: () => void }> = ({ onExit }) => {
         .select('*')
         .order('created_at', { ascending: false });
       
-      if (error) throw error;
+      if (error) {
+        console.error("Supabase API Error:", error);
+        throw error;
+      }
       setUsers(data || []);
     } catch (err: any) {
-      console.error("Fetch error:", err);
-      setFetchError(err.message || "فشل الاتصال بقاعدة البيانات (TypeError: Failed to fetch)");
+      console.error("Fetch implementation error:", err);
+      // التعامل مع خطأ الشبكة الشائع "Failed to fetch"
+      if (err.message === 'Failed to fetch' || err.name === 'TypeError') {
+        setFetchError("خطأ في الاتصال: فشل جلب البيانات (TypeError: Failed to fetch). تأكد من اتصال الإنترنت وصحة رابط المشروع.");
+      } else {
+        setFetchError(err.message || "حدث خطأ غير متوقع أثناء جلب البيانات.");
+      }
     } finally {
       setLoading(false);
     }
@@ -58,7 +70,6 @@ const AdminPanel: React.FC<{ onExit: () => void }> = ({ onExit }) => {
 
   const selectUser = (user: UserProfile) => {
     setSelectedUser(user);
-    // ملء الحقول بالأسئلة الموجودة مسبقاً أو حقول فارغة
     const existing = user.custom_questions || [];
     const filled = [...existing];
     while (filled.length < 10) filled.push('');
@@ -77,7 +88,6 @@ const AdminPanel: React.FC<{ onExit: () => void }> = ({ onExit }) => {
     setLoading(true);
     setSuccessMsg('');
     try {
-      // إزالة الأسئلة الفارغة قبل الحفظ
       const cleanedQuestions = tempQuestions.map(q => q.trim()).filter(q => q !== '');
       
       const { error } = await supabase
@@ -91,7 +101,7 @@ const AdminPanel: React.FC<{ onExit: () => void }> = ({ onExit }) => {
       if (error) throw error;
       
       setSuccessMsg('✅ تم تحديث أسئلة المستخدم وتفعيل VIP بنجاح!');
-      fetchUsers(); // تحديث القائمة لرؤية حالة التفعيل الجديدة
+      fetchUsers(); 
       
       setTimeout(() => setSuccessMsg(''), 4000);
     } catch (err: any) {
@@ -126,7 +136,6 @@ const AdminPanel: React.FC<{ onExit: () => void }> = ({ onExit }) => {
 
   return (
     <div className="fixed inset-0 bg-slate-950 flex flex-row-reverse z-[10000] font-sans rtl overflow-hidden text-white">
-      {/* القائمة الجانبية للمستخدمين */}
       <aside className="w-80 bg-slate-900 border-r border-white/5 flex flex-col h-full shadow-2xl z-20">
         <div className="p-8 border-b border-white/5 bg-slate-900/50">
           <h1 className="text-xl font-black text-indigo-500 italic">الطلاب المسجلون</h1>
@@ -175,7 +184,6 @@ const AdminPanel: React.FC<{ onExit: () => void }> = ({ onExit }) => {
         </div>
       </aside>
 
-      {/* منطقة العمل المركزية - محرر الأسئلة */}
       <main className="flex-1 h-full overflow-y-auto p-12 bg-[radial-gradient(circle_at_0%_0%,_#1e1b4b_0%,_transparent_40%)] custom-scrollbar relative">
         {selectedUser ? (
           <div className="max-w-4xl mx-auto animate-in fade-in slide-in-from-left-8 duration-500">
