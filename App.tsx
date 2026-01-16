@@ -76,26 +76,57 @@ const App: React.FC = () => {
     }
   }, []);
 
+  const saveScore = async (finalScore: number) => {
+    if (!isConfigured() || !user) return;
+    const name = user.user_metadata?.username || user.email;
+    try {
+      await supabase.from('leaderboard').insert([{ name, score: finalScore }]);
+      loadLeaderboard();
+    } catch (e) {
+      console.error("Failed to save score");
+    }
+  };
+
+  useEffect(() => {
+    const handleGameEvent = (e: any) => {
+      if (e.detail.type === 'LOSE_LIFE') {
+        setLives(prev => {
+          const next = prev - 1;
+          if (next <= 0) {
+            setGameOver(true);
+            setIsVictory(false);
+          }
+          return next;
+        });
+      } else if (e.detail.type === 'NEXT_LEVEL') {
+        setScore(prev => prev + 100);
+        setLevelIndex(prev => {
+          const next = prev + 1;
+          if (next >= dbQuestions.length) {
+            setGameOver(true);
+            setIsVictory(true);
+            saveScore(score + 100);
+          }
+          return next;
+        });
+      }
+    };
+
+    window.addEventListener('maze-game-event', handleGameEvent);
+    return () => window.removeEventListener('maze-game-event', handleGameEvent);
+  }, [dbQuestions.length, user, score]);
+
   useEffect(() => {
     const initSession = async () => {
+      if (!isConfigured()) return;
       try {
-        if (isConfigured()) {
-          const { data: { session } } = await supabase.auth.getSession();
-          if (session?.user) {
-            setUser(session.user);
-            setUsername(session.user.user_metadata.username || session.user.email?.split('@')[0]);
-          }
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          setUser(session.user);
+          setUsername(session.user.user_metadata.username || session.user.email?.split('@')[0]);
         }
       } catch (e) {
         console.error("Auth init failed", e);
-      }
-      
-      const params = new URLSearchParams(window.location.search);
-      const isPortalAccess = params.get('access') === 'portal';
-      const isPathAccess = window.location.pathname === '/admin';
-      
-      if (isPortalAccess || isPathAccess) {
-        setView('admin');
       }
     };
     
@@ -114,7 +145,7 @@ const App: React.FC = () => {
   const handleAuth = async (e: React.FormEvent, mode: 'login' | 'reg') => {
     e.preventDefault();
     if (!isConfigured()) {
-      setAuthError("تنبيه: قاعدة البيانات غير معدة بشكل كامل حالياً.");
+      setAuthError("تنبيه: قاعدة البيانات غير معدة (VITE_SUPABASE_URL مفقود).");
       return;
     }
     setAuthLoading(true);
@@ -141,8 +172,7 @@ const App: React.FC = () => {
         }
       }
     } catch (err: any) {
-      console.error("Auth error:", err);
-      setAuthError(err.message || "فشل الاتصال. تأكد من إعدادات Supabase والإنترنت.");
+      setAuthError(err.message || "فشل الاتصال.");
     } finally {
       setAuthLoading(false);
     }
@@ -152,17 +182,21 @@ const App: React.FC = () => {
 
   return (
     <div className="w-screen h-screen bg-slate-950 text-white overflow-hidden font-sans rtl">
-      {view === 'admin' && <AdminPanel onExit={() => {
-        window.history.replaceState({}, '', '/');
-        setView('landing');
-      }} />}
+      {/* شريط تنبيه في حالة عدم وجود الإعدادات */}
+      {!isConfigured() && (
+        <div className="bg-amber-600 text-white text-[10px] py-1 text-center font-bold z-[11000] relative">
+          ⚠️ تنبيه: التطبيق يعمل في وضع المعاينة فقط (Fallback Mode). إعدادات Supabase غير مكتملة.
+        </div>
+      )}
+
+      {view === 'admin' && <AdminPanel onExit={() => setView('landing')} />}
 
       {view === 'landing' && (
         <div className="flex flex-col items-center justify-center h-full text-center p-6">
           <h1 className="text-8xl md:text-[10rem] font-black mb-12 italic text-indigo-500 select-none">SPACE MAZE</h1>
           <div className="flex flex-col gap-4 w-full max-w-md">
-            <button onClick={() => setView(user ? 'game' : 'register')} className="py-6 bg-white text-black rounded-[2.5rem] font-black text-2xl hover:bg-slate-100 active:scale-95 transition-all">مهمة عادية 🚀</button>
-            <button onClick={() => { if(user) window.open(WHATSAPP_LINK, '_blank'); else setView('register'); }} className="py-5 bg-indigo-700 text-white rounded-[2.5rem] font-black text-xl hover:bg-indigo-600 transition-all">مغامرة VIP ✨</button>
+            <button onClick={() => { setLives(3); setLevelIndex(0); setScore(0); setGameOver(false); setView(user || !isConfigured() ? 'game' : 'register'); }} className="py-6 bg-white text-black rounded-[2.5rem] font-black text-2xl hover:bg-slate-100 active:scale-95 transition-all">مهمة عادية 🚀</button>
+            <button onClick={() => { if(user || !isConfigured()) window.open(WHATSAPP_LINK, '_blank'); else setView('register'); }} className="py-5 bg-indigo-700 text-white rounded-[2.5rem] font-black text-xl hover:bg-indigo-600 transition-all">مغامرة VIP ✨</button>
             <div className="grid grid-cols-2 gap-4">
               <button onClick={() => setView('leaderboard')} className="py-4 bg-slate-900 border border-white/10 rounded-3xl font-black text-[10px] uppercase hover:bg-slate-800">لوحة الشرف</button>
               {user ? (
@@ -171,24 +205,41 @@ const App: React.FC = () => {
                 <button onClick={() => setView('login')} className="py-4 bg-indigo-600/10 text-indigo-400 border border-indigo-500/20 rounded-3xl font-black text-[10px] uppercase hover:bg-indigo-600/20">دخول</button>
               )}
             </div>
+            <button onClick={() => setView('admin')} className="text-xs opacity-20 hover:opacity-100 transition-opacity">لوحة المسؤول</button>
           </div>
-          {user && <p className="mt-8 text-indigo-400 font-bold italic">مرحباً بك أيها المستكشف، {user.user_metadata?.username || user.email}</p>}
+          {user && <p className="mt-8 text-indigo-400 font-bold italic">مرحباً بك، {user.user_metadata?.username || user.email}</p>}
         </div>
       )}
 
       {view === 'game' && currentQuestion && (
         <div className="w-full h-full relative">
-          <div className="absolute top-8 left-1/2 -translate-x-1/2 z-40 w-full max-w-2xl px-6 text-center">
-             <div className="bg-slate-900/80 backdrop-blur-xl border border-white/10 p-6 rounded-[2rem]">
-                <h3 className="text-xl md:text-2xl font-bold">{currentQuestion.text}</h3>
-             </div>
+          <div className="absolute top-6 left-0 right-0 z-40 px-6 flex justify-between items-center pointer-events-none">
+            <div className="flex gap-2">
+              {[...Array(3)].map((_, i) => (
+                <span key={i} className={`text-3xl transition-all duration-500 ${i < lives ? 'grayscale-0 scale-100' : 'grayscale opacity-20 scale-75'}`}>❤️</span>
+              ))}
+            </div>
+            
+            <div className="bg-slate-900/80 backdrop-blur-xl border border-white/10 px-8 py-4 rounded-3xl text-center min-w-[300px] pointer-events-auto">
+              <p className="text-[10px] text-indigo-400 font-black uppercase tracking-widest mb-1">المهمة {levelIndex + 1} / {dbQuestions.length}</p>
+              <h3 className="text-lg md:text-xl font-bold leading-tight">{currentQuestion.text}</h3>
+            </div>
+
+            <div className="text-right">
+              <p className="text-xs font-black text-indigo-500 uppercase">SCORE</p>
+              <p className="text-3xl font-black italic">{score}</p>
+            </div>
           </div>
+
           <GameComponent questionData={currentQuestion} levelIndex={levelIndex} />
+
           {gameOver && (
-            <div className="absolute inset-0 bg-slate-950/95 flex items-center justify-center z-50">
-               <div className="text-center p-12 bg-slate-900 rounded-[3rem] border border-white/10">
-                  <h2 className="text-4xl font-black mb-6">{isVictory ? 'تمت المهمة بنجاح! 🏆' : 'انتهت المحاولات 🛑'}</h2>
-                  <button onClick={() => window.location.reload()} className="px-10 py-4 bg-white text-black rounded-full font-bold">العودة للرئيسية</button>
+            <div className="absolute inset-0 bg-slate-950/95 flex items-center justify-center z-50 p-6">
+               <div className="text-center p-12 bg-slate-900 rounded-[3rem] border border-white/10 max-w-sm w-full shadow-2xl">
+                  <div className="text-6xl mb-6">{isVictory ? '👑' : '💥'}</div>
+                  <h2 className="text-4xl font-black mb-2 leading-tight">{isVictory ? 'نصر مؤزر!' : 'تحطم المكوك!'}</h2>
+                  <p className="text-slate-400 mb-8">{isVictory ? `أحسنت يا بطل، لقد حصلت على ${score} نقطة` : 'لقد نفدت محاولاتك في هذه المتاهة'}</p>
+                  <button onClick={() => setView('landing')} className="w-full py-5 bg-white text-black rounded-[2rem] font-black text-xl hover:bg-slate-200 transition-all">العودة للرئيسية</button>
                </div>
             </div>
           )}
