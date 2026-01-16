@@ -1,15 +1,23 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-// الحصول على المتغيرات من بيئة التشغيل
-// Fix: Property 'env' does not exist on type 'ImportMeta'. Using process.env instead to access environment variables.
-const PROJECT_URL = (process.env.VITE_SUPABASE_URL || '').trim();
-// Fix: Property 'env' does not exist on type 'ImportMeta'. Using process.env instead to access environment variables.
-const ANON_KEY = (process.env.VITE_SUPABASE_ANON_KEY || '').trim();
+// محاولة الحصول على المتغيرات من مصادر متعددة لضمان التوافق
+const getEnv = (key: string) => {
+  // Fix: Property 'env' does not exist on type 'ImportMeta'. 
+  // We use type assertions to safely access Vite's import.meta.env or Node's process.env.
+  const anyMeta = import.meta as any;
+  const anyProcess = typeof process !== 'undefined' ? (process as any) : null;
 
-/**
- * دالة للتحقق من صحة رابط URL
- */
+  return (
+    (anyProcess?.env?.[key]) ||
+    (anyMeta?.env?.[key]) ||
+    ''
+  ).trim();
+};
+
+const PROJECT_URL = getEnv('VITE_SUPABASE_URL');
+const ANON_KEY = getEnv('VITE_SUPABASE_ANON_KEY');
+
 const isValidUrl = (url: string) => {
   try {
     const u = new URL(url);
@@ -19,23 +27,11 @@ const isValidUrl = (url: string) => {
   }
 };
 
-/**
- * إنشاء عميل Supabase
- * في حال عدم وجود الإعدادات، نستخدم قيم وهمية لمنع التطبيق من الانهيار (Crash) 
- * مع إظهار تحذير في وحدة التحكم (Console).
- */
 const effectiveUrl = isValidUrl(PROJECT_URL) ? PROJECT_URL : 'https://placeholder.supabase.co';
 const effectiveKey = ANON_KEY || 'placeholder-key';
 
-if (!isValidUrl(PROJECT_URL) || !ANON_KEY) {
-  console.warn("⚠️ Supabase environment variables are missing. Please check VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.");
-}
-
 export const supabase = createClient(effectiveUrl, effectiveKey);
 
-/**
- * دالة للتحقق مما إذا كان التطبيق متصلاً بقاعدة بيانات حقيقية
- */
 export const isConfigured = () => {
   return isValidUrl(PROJECT_URL) && ANON_KEY.length > 20;
 };
