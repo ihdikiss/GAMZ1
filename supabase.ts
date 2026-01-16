@@ -1,23 +1,16 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-// محاولة الحصول على المتغيرات من مصادر متعددة لضمان التوافق
-const getEnv = (key: string) => {
-  // Fix: Property 'env' does not exist on type 'ImportMeta'. 
-  // We use type assertions to safely access Vite's import.meta.env or Node's process.env.
-  const anyMeta = import.meta as any;
-  const anyProcess = typeof process !== 'undefined' ? (process as any) : null;
+/**
+ * بيانات مشروع Supabase الخاصة بك
+ * تم إدراجها هنا مباشرة لضمان عمل الاتصال بنجاح
+ */
+const PROJECT_URL = 'https://xrupdunizlfngkkferuu.supabase.co';
+const ANON_KEY = 'sb_publishable_O9RmOXHxUMhDouQguUCEjA_2FBftEMZ';
 
-  return (
-    (anyProcess?.env?.[key]) ||
-    (anyMeta?.env?.[key]) ||
-    ''
-  ).trim();
-};
-
-const PROJECT_URL = getEnv('VITE_SUPABASE_URL');
-const ANON_KEY = getEnv('VITE_SUPABASE_ANON_KEY');
-
+/**
+ * دالة للتحقق من صحة الرابط
+ */
 const isValidUrl = (url: string) => {
   try {
     const u = new URL(url);
@@ -27,11 +20,21 @@ const isValidUrl = (url: string) => {
   }
 };
 
+// استخدام الرابط المقدم أو رابط افتراضي في حالة الخطأ
 const effectiveUrl = isValidUrl(PROJECT_URL) ? PROJECT_URL : 'https://placeholder.supabase.co';
 const effectiveKey = ANON_KEY || 'placeholder-key';
 
-export const supabase = createClient(effectiveUrl, effectiveKey);
+// إنشاء عميل Supabase
+export const supabase = createClient(effectiveUrl, effectiveKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+  }
+});
 
+/**
+ * التحقق مما إذا كان قد تم تهيئة الإعدادات بنجاح
+ */
 export const isConfigured = () => {
-  return isValidUrl(PROJECT_URL) && ANON_KEY.length > 20;
+  return isValidUrl(PROJECT_URL) && ANON_KEY && ANON_KEY.length > 10;
 };
